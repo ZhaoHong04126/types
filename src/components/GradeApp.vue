@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue';
-import { currentSemester } from '../store'; // 引入全域學期
+import { currentSemester } from '../store';
 import type { CourseGrade, ModuleCategory, CourseCategory } from '../types/Grade';
 
 const department = ref(''); 
@@ -36,6 +36,9 @@ const STORAGE_KEY_GRADES = 'uni_life_grades_v1';
 const STORAGE_KEY_MODULES = 'uni_life_modules_v2'; 
 const STORAGE_KEY_DEPT = 'uni_life_dept_v1';
 
+// ✨ 用來儲存從課表抓過來的資料
+const allScheduleCourses = ref<any[]>([]);
+
 onMounted(() => {
   const savedGrades = localStorage.getItem(STORAGE_KEY_GRADES);
   const savedModules = localStorage.getItem(STORAGE_KEY_MODULES);
@@ -44,18 +47,55 @@ onMounted(() => {
   if (savedGrades) grades.value = JSON.parse(savedGrades);
   if (savedModules) modules.value = JSON.parse(savedModules);
   if (savedDept) department.value = savedDept;
+
+  // 初始讀取一次課表
+  const savedCourses = localStorage.getItem('uni_life_courses_v1');
+  if (savedCourses) allScheduleCourses.value = JSON.parse(savedCourses);
 });
 
 watch(grades, (val) => localStorage.setItem(STORAGE_KEY_GRADES, JSON.stringify(val)), { deep: true });
 watch(modules, (val) => localStorage.setItem(STORAGE_KEY_MODULES, JSON.stringify(val)), { deep: true });
 watch(department, (val) => localStorage.setItem(STORAGE_KEY_DEPT, val));
 
-// ✨ 1. 篩選出「當前學期」的成績
+// ✨ 篩選出目前學期課表上的「不重複科目名稱」
+const scheduleCourseNames = computed(() => {
+  const names = allScheduleCourses.value
+    .filter(c => c.semester === currentSemester.value)
+    .map(c => c.name);
+  return [...new Set(names)]; // 移除重複的名稱
+});
+
+// ✨ 魔法連動：當輸入的課程名稱改變時，自動計算對應的學分數
+watch(() => gradeForm.name, (newVal) => {
+  if (newVal) {
+    // 找出課表中同名且同個學期的課程佔了幾節課
+    const matches = allScheduleCourses.value.filter(c => 
+      c.semester === currentSemester.value && c.name === newVal
+    );
+    if (matches.length > 0) {
+      // 通常佔用幾節課就是幾學分，自動帶入
+      gradeForm.credits = matches.length;
+    }
+  }
+});
+
+const totalStats = computed(() => {
+  let totalCredits = 0;
+  let weightedScore = 0;
+
+  grades.value.forEach(g => {
+    totalCredits += g.credits;
+    weightedScore += (g.score * g.credits);
+  });
+
+  const average = totalCredits === 0 ? 0 : (weightedScore / totalCredits);
+  return { totalCredits, average: average.toFixed(2) };
+});
+
 const currentSemesterGrades = computed(() => {
   return grades.value.filter(g => g.semester === currentSemester.value);
 });
 
-// ✨ 2. 只計算「當前學期」的統計數據
 const currentStats = computed(() => {
   let totalCredits = 0;
   let weightedScore = 0;
@@ -69,7 +109,6 @@ const currentStats = computed(() => {
   return { totalCredits, average: average.toFixed(2) };
 });
 
-// ✨ 3. 模組進度保持計算「歷年所有學期」(畢業門檻用)
 const moduleProgress = computed(() => {
   const progress: Record<string, { total: number, req: number, elec: number }> = {};
   
@@ -77,7 +116,6 @@ const moduleProgress = computed(() => {
     progress[m.id] = { total: 0, req: 0, elec: 0 };
   });
 
-  // 注意：這裡是跑 grades.value (全部成績)
   grades.value.forEach(g => {
     if (g.moduleId && progress[g.moduleId]) {
       progress[g.moduleId].total += g.credits;
@@ -89,6 +127,10 @@ const moduleProgress = computed(() => {
     }
   });
   return progress;
+});
+
+const sortedGrades = computed(() => {
+  return [...grades.value].sort((a, b) => b.semester.localeCompare(a.semester));
 });
 
 const calcPercent = (earned: number, target: number) => {
@@ -106,8 +148,12 @@ const saveDept = () => { department.value = tempDepartment.value.trim(); isDeptL
 const cancelDeptEdit = () => { isDeptLocked.value = true; };
 
 const openGradeModal = () => {
+  // ✨ 每次打開新增視窗前，重新抓取一次最新的課表資料
+  const savedCourses = localStorage.getItem('uni_life_courses_v1');
+  if (savedCourses) allScheduleCourses.value = JSON.parse(savedCourses);
+
   gradeForm.name = '';
-  gradeForm.credits = 3;
+  gradeForm.credits = 0;
   gradeForm.score = 80;
   if (modules.value.length > 0) {
     gradeForm.moduleId = modules.value[0].id;
@@ -124,7 +170,7 @@ const saveGrade = () => {
 
   grades.value.push({
     id: Date.now().toString(),
-    semester: currentSemester.value, // 自動帶入當前學期
+    semester: currentSemester.value, 
     name: gradeForm.name,
     credits: gradeForm.credits,
     category: gradeForm.category,
@@ -172,17 +218,14 @@ const deleteModule = (id: string) => {
 
 <template>
   <div class="grade-container">
-    
     <div class="dept-card">
       <div class="dept-header">
         <span>🎓 學校科系</span>
         <button v-if="isDeptLocked" class="icon-btn-sm" @click="editDept">🔓 編輯</button>
       </div>
-      
       <div v-if="isDeptLocked" class="dept-display" :class="{ 'is-empty': !department }">
         {{ department || '尚未設定，請點擊解鎖編輯' }}
       </div>
-      
       <div v-else class="dept-edit-area">
         <input type="text" v-model="tempDepartment" placeholder="例如：台灣大學 資訊工程學系" class="dept-input">
         <div class="dept-actions">
@@ -239,9 +282,7 @@ const deleteModule = (id: string) => {
         </div>
       </div>
     </div>
-
     <div v-else-if="currentTab === 'modules'">
-      
       <div class="list-card">
         <div class="list-header">
           <h3>📂 畢業學分模組 <span style="font-size:0.8rem;color:#888;font-weight:normal">(歷年總計)</span></h3>
@@ -305,19 +346,21 @@ const deleteModule = (id: string) => {
           </div>
         </div>
       </div>
-
     </div>
-
     <div v-if="showGradeModal" class="modal-overlay">
       <div class="modal-card">
         <h3>💯 新增成績</h3>
-        
+        <div class="form-group">
+          <label>課程名稱</label>
+          <input list="schedule-course-list" v-model="gradeForm.name" placeholder="點此選擇課表科目，或手動輸入" autocomplete="off">
+          <datalist id="schedule-course-list">
+            <option v-for="cName in scheduleCourseNames" :key="cName" :value="cName"></option>
+          </datalist>
+        </div>
         <div class="form-group">
           <label>成績</label>
           <input type="number" v-model="gradeForm.score" placeholder="例如：85">
         </div>
-        
-        <div class="form-group"><label>課程名稱</label><input v-model="gradeForm.name" placeholder="例: 計算機概論"></div>
         <div class="form-row">
           <div class="form-group"><label>學分</label><input type="number" v-model="gradeForm.credits"></div>
           <div class="form-group">
@@ -340,7 +383,6 @@ const deleteModule = (id: string) => {
         </div>
       </div>
     </div>
-
     <div v-if="showModuleModal" class="modal-overlay">
       <div class="modal-card">
         <h3>📊 新增學分模組</h3>
@@ -355,12 +397,10 @@ const deleteModule = (id: string) => {
             <option value="complex">細分 必修 / 選修 目標</option>
           </select>
         </div>
-        
         <div v-if="moduleForm.type === 'simple'" class="form-group" style="background:#f8fafc; padding:10px; border-radius:8px;">
           <label>目標總學分</label>
           <input type="number" v-model="moduleForm.targetCredits" min="0">
         </div>
-
         <div v-if="moduleForm.type === 'complex'" class="form-row" style="background:#f8fafc; padding:10px; border-radius:8px;">
           <div class="form-group">
             <label>必修 目標</label>
@@ -371,14 +411,12 @@ const deleteModule = (id: string) => {
             <input type="number" v-model="moduleForm.targetElec" min="0">
           </div>
         </div>
-
         <div class="modal-actions">
           <button @click="showModuleModal = false">取消</button>
           <button class="save-btn" @click="saveModule">確定</button>
         </div>
       </div>
     </div>
-
   </div>
 </template>
 

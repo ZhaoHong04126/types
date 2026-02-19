@@ -1,0 +1,118 @@
+:root {
+  --primary: #4a90e2;
+  --bg: #f4f7f6;
+  --text-main: #333;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg);
+  color: var(--text-main);
+  /* 讓背景有漸層過渡效果 */
+  transition: background 0.5s ease;
+}
+
+/* 頂部導航列 */
+.top-bar {
+  height: 60px;
+  background: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  padding: 0 15px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  box-sizing: border-box;
+  z-index: 1000;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.back-btn {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 1.2rem;
+  margin-right: 15px;
+  cursor: pointer;
+  padding: 5px;
+}
+
+.app-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+/* 主內容區塊 (避開頂部導航) */
+.main-content {
+  padding-top: 80px;
+  padding-bottom: 20px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+/* --- APP Grid 佈局 (核心樣式) --- */
+.app-grid {
+  display: grid;
+  /* 手機版一行 4 個，還原舊版佈局 */
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px 10px;
+  padding: 10px;
+  justify-items: center;
+}
+
+.app-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  width: 70px;
+  transition: transform 0.1s;
+}
+
+.app-item:active {
+  transform: scale(0.95);
+}
+
+.app-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px; /* 連續曲線圓角 Squircle */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.8rem;
+  color: white;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+  margin-bottom: 8px;
+  user-select: none;
+}
+
+.app-label {
+  font-size: 0.8rem;
+  color: var(--text-main);
+  text-align: center;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 桌面版適配 */
+@media (min-width: 768px) {
+  .app-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 40px;
+    padding: 40px;
+  }
+  .app-icon {
+    width: 72px;
+    height: 72px;
+    font-size: 2.2rem;
+    border-radius: 22px;
+  }
+  .app-label {
+    font-size: 0.95rem;
+  }
+}

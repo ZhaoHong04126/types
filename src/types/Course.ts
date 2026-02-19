@@ -1,5 +1,6 @@
 export interface Course {
   id: string;
+  semester?: string; // 學期欄位
   name: string;      // 課程名稱
   location: string;  // 教室
   teacher: string;   // 老師

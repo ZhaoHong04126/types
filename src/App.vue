@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { currentSemester, semesterList } from './store'; // ✨ 引入全域學期狀態
+import { currentSemester, semesterList } from './store'; 
 
 import CourseTable from './components/CourseTable.vue';
 import AccountingApp from './components/AccountingApp.vue';
@@ -9,6 +9,9 @@ import CalendarApp from './components/CalendarApp.vue';
 import GradeApp from './components/GradeApp.vue';
 
 const currentPage = ref('home');
+
+// 學期區塊的鎖定狀態 (預設為鎖定)
+const isSemesterLocked = ref(true);
 
 const apps = [
   { id: 'schedule', name: '課表', icon: '📅', bg: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' },
@@ -38,8 +41,20 @@ const currentTitle = computed(() => {
   return app ? app.name : '校園王';
 });
 
-// ✨ 新增學期功能
+// --- 學期管理邏輯 ---
+
+const toggleSemesterLock = () => {
+  if (isSemesterLocked.value) {
+    if (confirm('確定要進入編輯模式嗎？（開啟後可修改或刪除學期）')) {
+      isSemesterLocked.value = false;
+    }
+  } else {
+    isSemesterLocked.value = true;
+  }
+};
+
 const addSemester = () => {
+  if (isSemesterLocked.value) return;
   const newSem = prompt('請輸入新學期名稱 (例如: 112-2)');
   if (newSem && newSem.trim()) {
     if (!semesterList.value.includes(newSem.trim())) {
@@ -48,6 +63,77 @@ const addSemester = () => {
     } else {
       alert('這個學期已經存在囉！');
       currentSemester.value = newSem.trim();
+    }
+  }
+};
+
+const editCurrentSemester = () => {
+  if (isSemesterLocked.value) return;
+  const oldName = currentSemester.value;
+  const newName = prompt(`請輸入「${oldName}」的新名稱：`, oldName);
+  
+  if (newName && newName.trim() && newName.trim() !== oldName) {
+    const finalName = newName.trim();
+    if (semesterList.value.includes(finalName)) {
+      return alert('此學期名稱已存在，請換一個名字！');
+    }
+
+    // 1. 更新清單與當前選擇
+    const index = semesterList.value.indexOf(oldName);
+    if (index !== -1) {
+      semesterList.value[index] = finalName;
+    }
+    currentSemester.value = finalName;
+
+    // 2. 自動連動更新 LocalStorage 裡的課表與成績資料
+    try {
+      const courses = JSON.parse(localStorage.getItem('uni_life_courses_v1') || '[]');
+      let coursesChanged = false;
+      courses.forEach((c: any) => { if (c.semester === oldName) { c.semester = finalName; coursesChanged = true; } });
+      if (coursesChanged) localStorage.setItem('uni_life_courses_v1', JSON.stringify(courses));
+
+      const grades = JSON.parse(localStorage.getItem('uni_life_grades_v1') || '[]');
+      let gradesChanged = false;
+      grades.forEach((g: any) => { if (g.semester === oldName) { g.semester = finalName; gradesChanged = true; } });
+      if (gradesChanged) localStorage.setItem('uni_life_grades_v1', JSON.stringify(grades));
+      
+      alert(`已成功將學期重新命名為「${finalName}」，課表與成績已自動同步！`);
+    } catch (e) {
+      console.error('資料同步失敗', e);
+    }
+  }
+};
+
+const deleteCurrentSemester = () => {
+  if (isSemesterLocked.value) return;
+
+  // ✨ 加入防呆：如果清單只剩下一個學期，阻擋刪除並提示
+  if (semesterList.value.length <= 1) {
+    return alert('無法刪除！系統至少需要保留一個學期喔。');
+  }
+
+  const target = currentSemester.value;
+  
+  if (confirm(`⚠️ 警告：確定要刪除「${target}」嗎？\n這將會一併刪除該學期的【所有課表與成績】，且無法復原！`)) {
+    // 1. 從清單移除
+    semesterList.value = semesterList.value.filter(s => s !== target);
+    
+    // 將當前學期切換到陣列中的第一個
+    currentSemester.value = semesterList.value[0];
+
+    // 2. 自動連動刪除 LocalStorage 裡的關聯資料
+    try {
+      let courses = JSON.parse(localStorage.getItem('uni_life_courses_v1') || '[]');
+      courses = courses.filter((c: any) => c.semester !== target);
+      localStorage.setItem('uni_life_courses_v1', JSON.stringify(courses));
+
+      let grades = JSON.parse(localStorage.getItem('uni_life_grades_v1') || '[]');
+      grades = grades.filter((g: any) => g.semester !== target);
+      localStorage.setItem('uni_life_grades_v1', JSON.stringify(grades));
+
+      alert('學期與相關資料已徹底刪除。');
+    } catch (e) {
+      console.error('資料刪除失敗', e);
     }
   }
 };
@@ -64,16 +150,33 @@ const addSemester = () => {
       <div v-if="currentPage === 'home'">
         
         <div class="semester-widget">
-          <div class="semester-info">
-            <span class="widget-icon">📅</span>
-            <div class="widget-text">
-              <span class="widget-label">目前學期</span>
-              <select v-model="currentSemester" class="semester-select">
-                <option v-for="sem in semesterList" :key="sem" :value="sem">{{ sem }}</option>
-              </select>
+          
+          <div class="semester-header">
+            <div class="s-title">📅 目前學期</div>
+            <button 
+              class="lock-btn-sm" 
+              :class="{ 'is-locked': isSemesterLocked }" 
+              @click="toggleSemesterLock"
+            >
+              {{ isSemesterLocked ? '🔒 唯讀' : '🔓 編輯' }}
+            </button>
+          </div>
+
+          <div class="semester-body">
+            <select v-model="currentSemester" class="semester-select">
+              <option v-for="sem in semesterList" :key="sem" :value="sem">{{ sem }}</option>
+            </select>
+
+            <div class="semester-actions" v-if="!isSemesterLocked">
+              <button class="icon-btn-sm edit-btn" @click="editCurrentSemester" title="重新命名">✏️ 修改</button>
+              <button class="icon-btn-sm del-btn" @click="deleteCurrentSemester" title="刪除學期">🗑️ 刪除</button>
+              <button class="icon-btn-sm add-btn" @click="addSemester">➕ 新增</button>
+            </div>
+            <div class="semester-hint" v-else>
+              💡 點選上方按鈕解鎖，即可新增或管理學期。
             </div>
           </div>
-          <button class="btn-new-sem" @click="addSemester">+ 新學期</button>
+          
         </div>
 
         <div class="app-grid">
@@ -94,21 +197,108 @@ const addSemester = () => {
 </template>
 
 <style>
-/* ✨ 學期 Widget 樣式 */
+/* 學期 Widget 樣式 */
 .semester-widget {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04);
+  margin-bottom: 25px;
+  overflow: hidden;
+  border: 1px solid #f1f5f9;
+}
+
+.semester-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 25px;
-  background: white;
-  border-radius: 18px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-  margin-bottom: 25px;
+  background: #f8fafc;
+  padding: 10px 15px;
+  border-bottom: 1px solid #e2e8f0;
 }
-.semester-info { display: flex; align-items: center; gap: 15px; }
-.widget-icon { font-size: 2rem; background: #e3f2fd; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; border-radius: 12px; }
-.widget-text { display: flex; flex-direction: column; gap: 4px; }
-.widget-label { font-size: 0.85rem; color: #666; font-weight: bold; letter-spacing: 1px; }
-.semester-select { font-size: 1.2rem; font-weight: bold; color: #4a90e2; border: none; background: transparent; padding: 0; cursor: pointer; outline: none; }
-.btn-new-sem { padding: 8px 16px; border-radius: 10px; background: #2ecc71; color: white; border: none; font-weight: bold; cursor: pointer; box-shadow: 0 4px 10px rgba(46, 204, 113, 0.3); }
+
+.s-title {
+  font-size: 0.9rem;
+  color: #64748b;
+  font-weight: bold;
+}
+
+.lock-btn-sm {
+  background: white;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+.lock-btn-sm.is-locked {
+  background: #fff3e0;
+  color: #f57c00;
+  border-color: #f57c00;
+}
+
+.semester-body {
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.semester-select {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #0ea5e9;
+  border: 2px solid transparent;
+  background: #f0f9ff;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  outline: none;
+  transition: 0.2s;
+  width: 100%;
+  text-align: center;
+  /* 隱藏原生箭頭，讓畫面更乾淨 */
+  appearance: none; 
+}
+.semester-select:hover {
+  border-color: #bae6fd;
+}
+
+.semester-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.icon-btn-sm {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: 0.2s;
+}
+
+.edit-btn { background: #f1f5f9; color: #475569; }
+.edit-btn:hover { background: #e2e8f0; }
+
+.del-btn { background: #fee2e2; color: #ef4444; }
+.del-btn:hover { background: #fca5a5; }
+
+.add-btn { background: #10b981; color: white; flex-grow: 1; justify-content: center; }
+.add-btn:hover { background: #059669; }
+
+.semester-hint {
+  text-align: center;
+  font-size: 0.85rem;
+  color: #94a3b8;
+  padding: 5px 0;
+}
 </style>

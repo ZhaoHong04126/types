@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue';
+import { currentSemester } from '../store'; // ✨ 引入全域學期
 import type { Course, TimeSlot } from '../types/Course';
 
 // --- 1. 初始化資料 ---
@@ -25,22 +26,18 @@ const palette = ['#ffffff', '#ffcdd2', '#ffe0b2', '#fff9c4', '#c8e6c9', '#bbdefb
 const courses = ref<Course[]>([]);
 const showModal = ref(false);
 const selectionAnchor = ref<{ day: number, period: number } | null>(null);
-const isLocked = ref(true); // ✨ 建議預設改為 true (鎖定)，這樣一進來才不會誤觸
+const isLocked = ref(true); 
 
-// ✨ 新增：切換鎖定狀態 (加入防呆確認)
 const toggleLock = () => {
   if (isLocked.value) {
-    // 唯讀 -> 編輯：詢問
     if (confirm('確定要進入編輯/修改模式嗎？')) {
       isLocked.value = false;
     }
   } else {
-    // 編輯 -> 唯讀：直接鎖定
     isLocked.value = true;
   }
 };
 
-// 表單資料
 const form = reactive({
   id: '',
   name: '', location: '', teacher: '',
@@ -55,7 +52,12 @@ onMounted(() => {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
     try {
-      courses.value = JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      // ✨ 舊資料自動相容處理：如果舊資料沒有學期，自動幫它綁定到目前的學期
+      courses.value = parsed.map((c: any) => ({
+        ...c,
+        semester: c.semester || currentSemester.value
+      }));
     } catch (e) {
       console.error('讀取失敗', e);
     }
@@ -66,7 +68,11 @@ watch(courses, (newVal) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(newVal));
 }, { deep: true });
 
-// --- 4. 核心邏輯 ---
+// ✨ 4. 核心邏輯：只篩選「當前學期」的課程
+const currentSemesterCourses = computed(() => {
+  return courses.value.filter(c => c.semester === currentSemester.value);
+});
+
 const gridMatrix = computed(() => {
   const matrix = new Map<string, { show: boolean; rowspan: number; course?: Course }>();
 
@@ -80,7 +86,9 @@ const gridMatrix = computed(() => {
     for (let i = 0; i < timeSlots.length; i++) {
       const p = timeSlots[i].period;
       const key = `${d}-${p}`;
-      const course = courses.value.find(c => c.day === d && c.period === p);
+      
+      // ✨ 這裡改用 currentSemesterCourses (只看目前學期的課)
+      const course = currentSemesterCourses.value.find(c => c.day === d && c.period === p);
 
       if (course) {
         if (!matrix.get(key)?.show) continue;
@@ -89,7 +97,7 @@ const gridMatrix = computed(() => {
         for (let j = i + 1; j < timeSlots.length; j++) {
           const nextP = timeSlots[j].period;
           const nextKey = `${d}-${nextP}`;
-          const nextCourse = courses.value.find(c => c.day === d && c.period === nextP);
+          const nextCourse = currentSemesterCourses.value.find(c => c.day === d && c.period === nextP);
 
           if (nextCourse && 
               nextCourse.name === course.name && 
@@ -149,7 +157,8 @@ const openAddModal = (day = 1, start = 1, end = 1) => {
 };
 
 const openEditModal = (course: Course) => {
-  const sameCourses = courses.value.filter(c => 
+  // ✨ 同樣只過濾目前學期的課
+  const sameCourses = currentSemesterCourses.value.filter(c => 
     c.day === course.day && c.name === course.name && c.location === course.location
   );
   const minP = Math.min(...sameCourses.map(c => c.period));
@@ -169,21 +178,18 @@ const openEditModal = (course: Course) => {
 const saveCourse = () => {
   if (!form.name) return alert('請輸入課程名稱');
   if (form.endPeriod < form.startPeriod) return alert('結束節次錯誤');
-
-  if (form.id) {
-     // 編輯邏輯簡化
-  }
   
-  // 1. 清除舊資料
+  // ✨ 1. 清除「當前學期」在該時段的舊資料 (避免刪到別的學期)
   courses.value = courses.value.filter(c => 
-    !(c.day === form.day && c.period >= form.startPeriod && c.period <= form.endPeriod)
+    !(c.semester === currentSemester.value && c.day === form.day && c.period >= form.startPeriod && c.period <= form.endPeriod)
   );
 
-  // 2. 新增
+  // ✨ 2. 新增時寫入當前學期
   for (let p = form.startPeriod; p <= form.endPeriod; p++) {
     if (timeSlots.find(ts => ts.period === p)) {
       courses.value.push({
         id: Date.now() + '-' + p,
+        semester: currentSemester.value, // 自動綁定首頁選的學期
         name: form.name,
         location: form.location,
         teacher: form.teacher,
@@ -200,8 +206,9 @@ const saveCourse = () => {
 
 const deleteCourse = () => {
   if (!confirm('確定刪除此課程？')) return;
+  // ✨ 刪除時也確保只刪除當前學期的課程
   courses.value = courses.value.filter(c => 
-    !(c.day === form.day && c.period >= form.startPeriod && c.period <= form.endPeriod)
+    !(c.semester === currentSemester.value && c.day === form.day && c.period >= form.startPeriod && c.period <= form.endPeriod)
   );
   showModal.value = false;
 };
@@ -234,7 +241,7 @@ const deleteCourse = () => {
       🔒 課表已鎖定，請點擊上方按鈕解鎖以編輯
     </div>
     <div class="hint-bar" v-else>
-      💡 點擊空白格子新增，點擊課程可編輯
+      💡 目前編輯【{{ currentSemester }}】的課表，點擊空白格子新增
     </div>
 
     <div class="table-wrapper" :class="{ 'locked-table': isLocked }">
@@ -276,7 +283,7 @@ const deleteCourse = () => {
 
     <div v-if="showModal" class="modal-overlay">
       <div class="modal-card">
-        <h3>{{ form.id ? '✏️ 編輯課程' : '➕ 新增課程' }}</h3>
+        <h3>{{ form.id ? '✏️ 編輯課程' : '➕ 新增課程' }} <span style="font-size: 0.8rem; color: #888; font-weight: normal;">({{ currentSemester }})</span></h3>
         
         <div class="form-group">
           <label>課程名稱</label>
@@ -346,14 +353,8 @@ const deleteCourse = () => {
 
 /* Toolbar */
 .toolbar { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 10px; }
-
-.lock-btn {
-  background: white; border: 1px solid #ddd; color: #666;
-  padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold;
-  transition: all 0.2s;
-}
+.lock-btn { background: white; border: 1px solid #ddd; color: #666; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.2s; }
 .lock-btn.is-locked { background: #fff3e0; color: #f57c00; border-color: #f57c00; }
-
 .add-btn { background: #3b82f6; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
 .add-btn:hover { background: #2563eb; }
 .add-btn:disabled { background: #ccc; cursor: not-allowed; }
@@ -389,7 +390,7 @@ td { border: 1px solid #eee; text-align: center; vertical-align: middle; padding
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 2000; }
 .modal-card { background: white; padding: 25px; border-radius: 16px; width: 85%; max-width: 320px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); animation: popIn 0.2s; }
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-.modal-card h3 { margin-top: 0; text-align: center; color: #333; margin-bottom: 20px; }
+.modal-card h3 { margin-top: 0; text-align: center; color: #333; margin-bottom: 20px; display: flex; flex-direction: column; gap: 5px; }
 .form-group { margin-bottom: 15px; }
 .form-row { display: flex; gap: 10px; }
 .form-row .form-group { flex: 1; }

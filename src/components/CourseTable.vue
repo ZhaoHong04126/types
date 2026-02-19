@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue';
+import { ref, reactive, computed, onMounted, watch } from 'vue';
 import type { Course, TimeSlot } from '../types/Course';
 
-// 1. 設定時間表 (模擬舊版結構)
+// --- 1. 初始化資料 ---
 const days = ['一', '二', '三', '四', '五', '六', '日'];
 const timeSlots: TimeSlot[] = [
   { period: 1, label: '1', time: '08:10' },
@@ -15,79 +15,91 @@ const timeSlots: TimeSlot[] = [
   { period: 8, label: '7', time: '15:10' },
   { period: 9, label: '8', time: '16:10' },
   { period: 10, label: '9', time: '17:10' },
+  { period: 11, label: 'A', time: '18:10' },
+  { period: 12, label: 'B', time: '19:10' },
 ];
 
-// 2. 舊版的經典色票
-const palette = [
-  '#ffffff', // 白 (預設)
-  '#ffcdd2', // 紅
-  '#ffe0b2', // 橘
-  '#fff9c4', // 黃
-  '#c8e6c9', // 綠
-  '#bbdefb', // 藍
-  '#e1bee7', // 紫
-];
+const palette = ['#ffffff', '#ffcdd2', '#ffe0b2', '#fff9c4', '#c8e6c9', '#bbdefb', '#e1bee7'];
 
-// 3. 課程資料 (使用 ref)
-const courses = ref<Course[]>([
-  // 預設給一個連堂範例
-  { id: '1', name: '微積分', location: 'A101', teacher: '陳教授', day: 1, period: 1, color: '#e1bee7' },
-  { id: '2', name: '微積分', location: 'A101', teacher: '陳教授', day: 1, period: 2, color: '#e1bee7' },
-]);
-
-// 4. 控制 Modal
+// --- 2. 狀態管理 ---
+const courses = ref<Course[]>([]);
 const showModal = ref(false);
+const selectionAnchor = ref<{ day: number, period: number } | null>(null);
+const isLocked = ref(true); // ✨ 建議預設改為 true (鎖定)，這樣一進來才不會誤觸
+
+// ✨ 新增：切換鎖定狀態 (加入防呆確認)
+const toggleLock = () => {
+  if (isLocked.value) {
+    // 唯讀 -> 編輯：詢問
+    if (confirm('確定要進入編輯/修改模式嗎？')) {
+      isLocked.value = false;
+    }
+  } else {
+    // 編輯 -> 唯讀：直接鎖定
+    isLocked.value = true;
+  }
+};
+
+// 表單資料
 const form = reactive({
+  id: '',
   name: '', location: '', teacher: '',
-  day: 1,
-  startPeriod: 1, // 起始節次
-  endPeriod: 1,   // 結束節次
+  day: 1, startPeriod: 1, endPeriod: 1,
   color: '#ffffff'
 });
 
-// --- 核心邏輯：計算顯示網格 (處理 Rowspan) ---
-// 這段是從舊版 renderWeeklyTable 邏輯轉譯過來的
+// --- 3. 資料持久化 ---
+const STORAGE_KEY = 'uni_life_courses_v1';
+
+onMounted(() => {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    try {
+      courses.value = JSON.parse(saved);
+    } catch (e) {
+      console.error('讀取失敗', e);
+    }
+  }
+});
+
+watch(courses, (newVal) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(newVal));
+}, { deep: true });
+
+// --- 4. 核心邏輯 ---
 const gridMatrix = computed(() => {
   const matrix = new Map<string, { show: boolean; rowspan: number; course?: Course }>();
 
-  // 先初始化每一格
   for (const slot of timeSlots) {
     for (let d = 1; d <= 7; d++) {
       matrix.set(`${d}-${slot.period}`, { show: true, rowspan: 1 });
     }
   }
 
-  // 填入課程並計算合併
   for (let d = 1; d <= 7; d++) {
     for (let i = 0; i < timeSlots.length; i++) {
       const p = timeSlots[i].period;
       const key = `${d}-${p}`;
-      
-      // 找出這一格的課程
       const course = courses.value.find(c => c.day === d && c.period === p);
 
       if (course) {
-        // 如果這格已經被「吃掉」了(skip)，就跳過
         if (!matrix.get(key)?.show) continue;
 
-        // 往下記錄連堂數
         let span = 1;
         for (let j = i + 1; j < timeSlots.length; j++) {
           const nextP = timeSlots[j].period;
           const nextKey = `${d}-${nextP}`;
           const nextCourse = courses.value.find(c => c.day === d && c.period === nextP);
 
-          // 舊版邏輯：科目相同 & 地點相同 = 合併
-          if (nextCourse && nextCourse.name === course.name && nextCourse.location === course.location) {
+          if (nextCourse && 
+              nextCourse.name === course.name && 
+              nextCourse.location === course.location) {
             span++;
-            // 把下一格標記為不顯示
             matrix.set(nextKey, { show: false, rowspan: 0 });
           } else {
             break;
           }
         }
-        
-        // 設定當前格子的 rowspan
         matrix.set(key, { show: true, rowspan: span, course });
       }
     }
@@ -95,33 +107,80 @@ const gridMatrix = computed(() => {
   return matrix;
 });
 
-// 取得格子的樣式 helper
-const getCellData = (day: number, period: number) => {
-  return gridMatrix.value.get(`${day}-${period}`);
+const getCell = (day: number, period: number) => gridMatrix.value.get(`${day}-${period}`);
+
+// --- 5. 互動邏輯 ---
+const handleCellClick = (day: number, period: number) => {
+  if (isLocked.value) return;
+
+  const cellData = getCell(day, period);
+
+  if (cellData?.course) {
+    openEditModal(cellData.course);
+    return;
+  }
+
+  if (!selectionAnchor.value) {
+    selectionAnchor.value = { day, period };
+  } else {
+    if (selectionAnchor.value.day === day) {
+      const start = Math.min(selectionAnchor.value.period, period);
+      const end = Math.max(selectionAnchor.value.period, period);
+      openAddModal(day, start, end);
+      selectionAnchor.value = null;
+    } else {
+      selectionAnchor.value = { day, period };
+    }
+  }
 };
 
-// --- 功能：新增課程 (支援區間 1-3) ---
-const openAddModal = () => {
+const handleManualAdd = () => {
+  if (isLocked.value) return;
+  openAddModal();
+};
+
+// --- 6. Modal 操作 ---
+const openAddModal = (day = 1, start = 1, end = 1) => {
+  form.id = '';
   form.name = ''; form.location = ''; form.teacher = '';
-  form.day = 1; form.startPeriod = 1; form.endPeriod = 1;
+  form.day = day; form.startPeriod = start; form.endPeriod = end;
   form.color = '#ffffff';
+  showModal.value = true;
+};
+
+const openEditModal = (course: Course) => {
+  const sameCourses = courses.value.filter(c => 
+    c.day === course.day && c.name === course.name && c.location === course.location
+  );
+  const minP = Math.min(...sameCourses.map(c => c.period));
+  const maxP = Math.max(...sameCourses.map(c => c.period));
+
+  form.id = course.id;
+  form.name = course.name;
+  form.location = course.location;
+  form.teacher = course.teacher;
+  form.day = course.day;
+  form.startPeriod = minP;
+  form.endPeriod = maxP;
+  form.color = course.color;
   showModal.value = true;
 };
 
 const saveCourse = () => {
   if (!form.name) return alert('請輸入課程名稱');
-  if (form.endPeriod < form.startPeriod) return alert('結束節次不能早於起始節次');
+  if (form.endPeriod < form.startPeriod) return alert('結束節次錯誤');
 
-  // 1. 先刪除該時段舊的課 (避免重疊)
-  // 簡單版：直接濾掉該區間的舊課
+  if (form.id) {
+     // 編輯邏輯簡化
+  }
+  
+  // 1. 清除舊資料
   courses.value = courses.value.filter(c => 
     !(c.day === form.day && c.period >= form.startPeriod && c.period <= form.endPeriod)
   );
 
-  // 2. 迴圈新增每一節課 (1-3節 = 新增 1, 2, 3 三筆資料)
-  // 這是為了配合舊版資料結構，讓每一格都是獨立資料
+  // 2. 新增
   for (let p = form.startPeriod; p <= form.endPeriod; p++) {
-    // 如果該節次存在於時間表中才新增
     if (timeSlots.find(ts => ts.period === p)) {
       courses.value.push({
         id: Date.now() + '-' + p,
@@ -136,26 +195,49 @@ const saveCourse = () => {
   }
 
   showModal.value = false;
+  selectionAnchor.value = null;
 };
 
-// 刪除課程 (點擊時刪除該「連堂」的所有課程)
-const handleClick = (course: Course) => {
-  if (confirm(`確定刪除「${course.name}」嗎？`)) {
-    // 刪除所有 同天、同名、同地點 的課 (連堂一起刪)
-    courses.value = courses.value.filter(c => 
-      !(c.day === course.day && c.name === course.name && c.location === course.location)
-    );
-  }
+const deleteCourse = () => {
+  if (!confirm('確定刪除此課程？')) return;
+  courses.value = courses.value.filter(c => 
+    !(c.day === form.day && c.period >= form.startPeriod && c.period <= form.endPeriod)
+  );
+  showModal.value = false;
 };
 </script>
 
 <template>
   <div class="container">
     <div class="toolbar">
-      <button class="add-btn" @click="openAddModal">＋ 新增課程</button>
+      <button 
+        class="lock-btn" 
+        :class="{ 'is-locked': isLocked }"
+        @click="toggleLock"
+      >
+        {{ isLocked ? '🔒 唯讀模式' : '🔓 編輯模式' }}
+      </button>
+
+      <button 
+        class="add-btn" 
+        :disabled="isLocked"
+        @click="handleManualAdd"
+      >
+        ＋ 新增課程
+      </button>
     </div>
 
-    <div class="table-wrapper">
+    <div class="hint-bar" v-if="selectionAnchor && !isLocked">
+      已選取週{{ days[selectionAnchor.day - 1] }} 第 {{ timeSlots.find(t=>t.period === selectionAnchor?.period)?.label }} 節，請點選結束節次
+    </div>
+    <div class="hint-bar locked-hint" v-else-if="isLocked">
+      🔒 課表已鎖定，請點擊上方按鈕解鎖以編輯
+    </div>
+    <div class="hint-bar" v-else>
+      💡 點擊空白格子新增，點擊課程可編輯
+    </div>
+
+    <div class="table-wrapper" :class="{ 'locked-table': isLocked }">
       <table class="schedule-table">
         <thead>
           <tr>
@@ -169,19 +251,21 @@ const handleClick = (course: Course) => {
               <span class="p-num">{{ slot.label }}</span>
               <span class="p-time">{{ slot.time }}</span>
             </td>
-
             <template v-for="(dayName, idx) in days" :key="idx">
               <td 
-                v-if="getCellData(idx + 1, slot.period)?.show"
-                :rowspan="getCellData(idx + 1, slot.period)?.rowspan"
+                v-if="getCell(idx + 1, slot.period)?.show"
+                :rowspan="getCell(idx + 1, slot.period)?.rowspan"
                 class="course-cell"
-                :class="{ 'has-course': getCellData(idx + 1, slot.period)?.course }"
-                :style="{ backgroundColor: getCellData(idx + 1, slot.period)?.course?.color || 'white' }"
-                @click="getCellData(idx + 1, slot.period)?.course && handleClick(getCellData(idx + 1, slot.period)!.course!)"
+                :class="{ 
+                  'has-course': getCell(idx + 1, slot.period)?.course,
+                  'is-selected': selectionAnchor?.day === (idx+1) && selectionAnchor?.period === slot.period
+                }"
+                :style="{ backgroundColor: getCell(idx + 1, slot.period)?.course?.color || '' }"
+                @click="handleCellClick(idx + 1, slot.period)"
               >
-                <div v-if="getCellData(idx + 1, slot.period)?.course" class="course-content">
-                  <div class="c-name">{{ getCellData(idx + 1, slot.period)?.course?.name }}</div>
-                  <div class="c-loc">{{ getCellData(idx + 1, slot.period)?.course?.location }}</div>
+                <div v-if="getCell(idx + 1, slot.period)?.course" class="course-content">
+                  <div class="c-name">{{ getCell(idx + 1, slot.period)?.course?.name }}</div>
+                  <div class="c-loc">{{ getCell(idx + 1, slot.period)?.course?.location }}</div>
                 </div>
               </td>
             </template>
@@ -192,22 +276,22 @@ const handleClick = (course: Course) => {
 
     <div v-if="showModal" class="modal-overlay">
       <div class="modal-card">
-        <h3>✏️ 編輯課程</h3>
+        <h3>{{ form.id ? '✏️ 編輯課程' : '➕ 新增課程' }}</h3>
         
         <div class="form-group">
           <label>課程名稱</label>
-          <input v-model="form.name" placeholder="例：計算機概論">
+          <input v-model="form.name" placeholder="例：微積分" />
         </div>
 
         <div class="form-row">
           <div class="form-group">
             <label>星期</label>
-            <select v-model="form.day">
+            <select v-model="form.day" disabled>
               <option v-for="(d, i) in days" :key="d" :value="i+1">{{ d }}</option>
             </select>
           </div>
           <div class="form-group">
-            <label>節次 (起-迄)</label>
+            <label>節次區間</label>
             <div class="period-range">
               <select v-model="form.startPeriod">
                 <option v-for="s in timeSlots" :key="s.period" :value="s.period">{{ s.label }}</option>
@@ -223,11 +307,11 @@ const handleClick = (course: Course) => {
         <div class="form-row">
           <div class="form-group">
             <label>地點</label>
-            <input v-model="form.location" placeholder="例：C204">
+            <input v-model="form.location" placeholder="例：A101" />
           </div>
           <div class="form-group">
             <label>老師</label>
-            <input v-model="form.teacher" placeholder="例：王老師">
+            <input v-model="form.teacher" placeholder="例：陳教授" />
           </div>
         </div>
 
@@ -236,66 +320,88 @@ const handleClick = (course: Course) => {
           <div class="color-palette">
             <div 
               v-for="c in palette" :key="c" 
-              class="color-swatch"
-              :style="{ background: c, borderColor: form.color === c ? '#333' : 'transparent' }"
+              class="color-swatch" 
+              :style="{ background: c }" 
+              :class="{ selected: form.color === c }" 
               @click="form.color = c"
             ></div>
           </div>
         </div>
 
         <div class="modal-actions">
-          <button @click="showModal = false">取消</button>
+          <button v-if="form.id" class="delete-btn" @click="deleteCourse">刪除</button>
+          <button v-else @click="showModal = false">取消</button>
           <button class="save-btn" @click="saveCourse">儲存</button>
         </div>
+        
+        <button v-if="form.id" class="close-text-btn" @click="showModal = false">取消</button>
       </div>
     </div>
+
   </div>
 </template>
 
 <style scoped>
-/* 容器與按鈕 */
-.container { max-width: 800px; margin: 0 auto; }
-.toolbar { text-align: right; margin-bottom: 10px; }
-.add-btn { background: #3b82f6; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.container { max-width: 800px; margin: 0 auto; position: relative; }
+
+/* Toolbar */
+.toolbar { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 10px; }
+
+.lock-btn {
+  background: white; border: 1px solid #ddd; color: #666;
+  padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold;
+  transition: all 0.2s;
+}
+.lock-btn.is-locked { background: #fff3e0; color: #f57c00; border-color: #f57c00; }
+
+.add-btn { background: #3b82f6; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
 .add-btn:hover { background: #2563eb; }
+.add-btn:disabled { background: #ccc; cursor: not-allowed; }
 
-/* 表格樣式 (模擬舊版 CampusKing 風格) */
-.table-wrapper { overflow-x: auto; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+.hint-bar { background: rgba(59, 130, 246, 0.1); color: #3b82f6; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; font-size: 0.9rem; text-align: center; }
+.hint-bar.locked-hint { background: #fff3e0; color: #f57c00; }
+
+/* Table */
+.table-wrapper { overflow-x: auto; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); background: white; transition: 0.3s; }
+.locked-table { opacity: 0.9; background: #fafafa; }
+
 .schedule-table { width: 100%; border-collapse: collapse; min-width: 600px; table-layout: fixed; }
-
 th { background: #f8f9fa; padding: 10px; border-bottom: 2px solid #eee; color: #555; font-size: 0.9rem; }
-.time-header { width: 50px; background: #f1f5f9; }
-
-td { border: 1px solid #eee; text-align: center; vertical-align: middle; padding: 4px; height: 50px; }
-.time-col { background: #f8f9fa; width: 50px; }
+.time-header { width: 45px; background: #f1f5f9; }
+td { border: 1px solid #eee; text-align: center; vertical-align: middle; padding: 2px; height: 50px; position: relative; }
+.time-col { background: #f8f9fa; width: 45px; }
 .p-num { display: block; font-weight: bold; font-size: 1rem; color: #444; }
-.p-time { display: block; font-size: 0.75rem; color: #888; }
+.p-time { display: block; font-size: 0.7rem; color: #888; }
 
-/* 課程格子 */
-.course-cell { transition: background 0.2s; }
-.has-course { cursor: pointer; border-left: 3px solid rgba(0,0,0,0.1) !important; }
+.course-cell:not(.has-course):hover { background-color: #f9fafb; cursor: pointer; }
+.locked-table .course-cell:not(.has-course):hover { background-color: transparent; cursor: default; }
+
+.is-selected { background-color: #b2dfdb !important; box-shadow: inset 0 0 0 2px #009688; }
+.has-course { cursor: pointer; border-left: 4px solid rgba(0,0,0,0.15) !important; transition: filter 0.2s; }
 .has-course:hover { filter: brightness(0.95); }
-.c-name { font-weight: bold; font-size: 0.9rem; color: #333; margin-bottom: 2px; }
-.c-loc { font-size: 0.8rem; color: #666; }
+.locked-table .has-course { cursor: default; }
+.locked-table .has-course:hover { filter: none; }
 
-/* Modal 樣式 */
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 999; }
-.modal-card { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 350px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
-.modal-card h3 { margin-top: 0; text-align: center; color: #333; }
+.c-name { font-weight: bold; font-size: 0.85rem; color: #333; line-height: 1.2; }
+.c-loc { font-size: 0.75rem; color: #666; margin-top: 2px; }
 
-.form-group { margin-bottom: 12px; }
+/* Modal */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 2000; }
+.modal-card { background: white; padding: 25px; border-radius: 16px; width: 85%; max-width: 320px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); animation: popIn 0.2s; }
+@keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.modal-card h3 { margin-top: 0; text-align: center; color: #333; margin-bottom: 20px; }
+.form-group { margin-bottom: 15px; }
 .form-row { display: flex; gap: 10px; }
 .form-row .form-group { flex: 1; }
-label { display: block; font-size: 0.85rem; color: #666; margin-bottom: 4px; }
-input, select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+label { display: block; font-size: 0.85rem; color: #666; margin-bottom: 5px; }
+input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 1rem; background: #fff; }
 .period-range { display: flex; align-items: center; gap: 5px; }
-
-/* 色票選擇 */
-.color-palette { display: flex; gap: 8px; justify-content: center; margin-top: 5px; }
-.color-swatch { width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: transform 0.1s; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-.color-swatch:active { transform: scale(0.9); }
-
-.modal-actions { display: flex; justify-content: space-between; margin-top: 20px; }
-.modal-actions button { flex: 1; margin: 0 5px; padding: 10px; border: 1px solid #ddd; background: white; border-radius: 6px; cursor: pointer; }
-.save-btn { background: #3b82f6 !important; color: white; border: none !important; }
+.color-palette { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.color-swatch { width: 32px; height: 32px; border-radius: 50%; border: 2px solid #eee; cursor: pointer; transition: transform 0.1s; }
+.color-swatch.selected { border-color: #555; transform: scale(1.1); box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+.modal-actions { display: flex; gap: 10px; margin-top: 25px; }
+.modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: bold; }
+.save-btn { background: #3b82f6; color: white; }
+.delete-btn { background: #fee2e2; color: #ef4444; }
+.close-text-btn { background: transparent; border: none; color: #999; width: 100%; margin-top: 10px; cursor: pointer; }
 </style>

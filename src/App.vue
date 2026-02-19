@@ -1,43 +1,46 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import CourseTable from './components/CourseTable.vue';
+import AccountingApp from './components/AccountingApp.vue';
+import LotteryApp from './components/LotteryApp.vue';
+import CalendarApp from './components/CalendarApp.vue';
 
 // 1. 定義頁面狀態 ('home' | 'schedule' | 'settings' ...)
 const currentPage = ref('home');
 
 // 2. 定義 APP 列表 (還原源專案的樣式與漸層)
 const apps = [
-  { 
+  {
     id: 'schedule', 
     name: '課表', 
     icon: '📅', 
     bg: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' 
   },
-  { 
-    id: 'lottery', 
-    name: '幸運籤筒', 
-    icon: '🎰', 
-    bg: 'linear-gradient(135deg, #FF9A9E 0%, #FECFEF 100%)' 
-  },
-  { 
-    id: 'calendar', 
-    name: '行事曆', 
-    icon: '🗓️', 
-    bg: 'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)' 
-  },
-  { 
-    id: 'grades', 
-    name: '成績管理', 
-    icon: '💯', 
-    bg: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)' 
-  },
-  { 
+  {
     id: 'accounting', 
     name: '記帳', 
     icon: '💰', 
     bg: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)' 
   },
-  { 
+  {
+    id: 'lottery', 
+    name: '幸運籤筒', 
+    icon: '🎰', 
+    bg: 'linear-gradient(135deg, #FF9A9E 0%, #FECFEF 100%)' 
+  },
+  {
+    id: 'calendar', 
+    name: '行事曆', 
+    icon: '🗓️', 
+    bg: 'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)' 
+  },
+  {
+    id: 'grades', 
+    name: '成績管理', 
+    icon: '💯', 
+    bg: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)' 
+  },
+  {
     id: 'settings', 
     name: '設定', 
     icon: '⚙️', 
@@ -49,8 +52,14 @@ const apps = [
 const openApp = (appId: string) => {
   if (appId === 'schedule') {
     currentPage.value = 'schedule';
+  } else if (appId === 'accounting') {
+    currentPage.value = 'accounting';
+  } else if (appId === 'lottery') {
+    currentPage.value = 'lottery';
+  } else if (appId === 'calendar') {
+    currentPage.value = 'calendar';
   } else {
-    alert(`「${appId}」功能尚未實作，請先測試課表！`);
+    alert(`「${appId}」功能尚未實作！`);
   }
 };
 
@@ -77,23 +86,25 @@ const currentTitle = computed(() => {
 
     <main class="main-content">
       <div v-if="currentPage === 'home'" class="app-grid">
-        <div 
-          v-for="app in apps" 
-          :key="app.id" 
-          class="app-item" 
-          @click="openApp(app.id)"
-        >
+        <div v-for="app in apps" :key="app.id" class="app-item" @click="openApp(app.id)">
           <div class="app-icon" :style="{ background: app.bg }">
             {{ app.icon }}
           </div>
           <div class="app-label">{{ app.name }}</div>
         </div>
       </div>
-
       <div v-else-if="currentPage === 'schedule'">
         <CourseTable />
       </div>
-
+      <div v-else-if="currentPage === 'accounting'">
+        <AccountingApp />
+      </div>
+      <div v-else-if="currentPage === 'lottery'">
+        <LotteryApp />
+      </div>
+      <div v-else-if="currentPage === 'calendar'">
+        <CalendarApp />
+      </div>
       <div v-else>
         <p style="text-align: center; color: #999;">功能開發中...</p>
       </div>

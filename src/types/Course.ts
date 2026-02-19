@@ -1,4 +1,3 @@
-// src/types/Course.ts
 export interface Course {
   id: string;
   name: string;      // 課程名稱

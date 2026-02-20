@@ -27,3 +27,51 @@ watch(semesterList, (val) => {
 watch(userName, (val) => {
   localStorage.setItem('uni_life_user_name', val);
 });
+
+// ==========================================
+// ✨ 全域自訂對話框 (Global Dialog) 系統
+// ==========================================
+export const dialogState = ref({
+  isOpen: false,
+  type: 'alert' as 'alert' | 'confirm' | 'prompt',
+  title: '',
+  message: '',
+  inputValue: '',
+  inputPlaceholder: '',
+  resolvePromise: null as ((value: any) => void) | null,
+});
+
+export const customAlert = (message: string, title = '💡 提示') => {
+  return new Promise<void>((resolve) => {
+    dialogState.value = {
+      isOpen: true, type: 'alert', title, message,
+      inputValue: '', inputPlaceholder: '', resolvePromise: resolve
+    };
+  });
+};
+
+export const customConfirm = (message: string, title = '❓ 請確認') => {
+  return new Promise<boolean>((resolve) => {
+    dialogState.value = {
+      isOpen: true, type: 'confirm', title, message,
+      inputValue: '', inputPlaceholder: '', resolvePromise: resolve
+    };
+  });
+};
+
+export const customPrompt = (message: string, defaultValue = '', placeholder = '', title = '✏️ 請輸入') => {
+  return new Promise<string | null>((resolve) => {
+    dialogState.value = {
+      isOpen: true, type: 'prompt', title, message,
+      inputValue: defaultValue, inputPlaceholder: placeholder, resolvePromise: resolve
+    };
+  });
+};
+
+export const closeDialog = (result: any = null) => {
+  dialogState.value.isOpen = false;
+  if (dialogState.value.resolvePromise) {
+    dialogState.value.resolvePromise(result);
+    dialogState.value.resolvePromise = null;
+  }
+};

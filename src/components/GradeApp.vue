@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue';
-import { currentSemester, customAlert, customConfirm } from '../store';
+import { currentSemester, customAlert, customConfirm } from '../store'; 
 import type { CourseGrade, ModuleCategory, CourseCategory } from '../types/Grade';
 
 const grades = ref<CourseGrade[]>([]);
@@ -10,10 +10,17 @@ const currentTab = ref<'records' | 'modules'>('records');
 const showGradeModal = ref(false);
 const showModuleModal = ref(false);
 
+// 自主學習狀態
+const isSelfStudy = ref(false);
+
 const courseCategories: CourseCategory[] = ['必修', '選修', '必選修'];
 
 const gradeForm = reactive({
-  name: '', credits: 3, category: '必修' as CourseCategory, score: 80, moduleId: ''
+  name: '', 
+  credits: 3, 
+  category: '必修' as CourseCategory, 
+  score: 80, 
+  moduleId: ''
 });
 
 const moduleForm = reactive({
@@ -44,7 +51,7 @@ const scheduleCourseNames = computed(() => {
 });
 
 watch(() => gradeForm.name, (newVal) => {
-  if (newVal) {
+  if (newVal && !isSelfStudy.value) {
     const matches = allScheduleCourses.value.filter(c => c.semester === currentSemester.value && c.name === newVal);
     if (matches.length > 0) gradeForm.credits = matches.length;
   }
@@ -53,17 +60,36 @@ watch(() => gradeForm.name, (newVal) => {
 const currentSemesterGrades = computed(() => grades.value.filter(g => g.semester === currentSemester.value));
 
 const currentStats = computed(() => {
-  let totalCredits = 0; let weightedScore = 0;
-  currentSemesterGrades.value.forEach(g => { totalCredits += g.credits; weightedScore += (g.score * g.credits); });
-  const average = totalCredits === 0 ? 0 : (weightedScore / totalCredits);
-  return { totalCredits, average: average.toFixed(2) };
+  let totalCreditsForGpa = 0; 
+  let weightedScore = 0;      
+  let earnedCredits = 0;      
+
+  currentSemesterGrades.value.forEach(g => { 
+    if (g.score === -1) {
+      earnedCredits += g.credits;
+    } else {
+      totalCreditsForGpa += g.credits; 
+      weightedScore += (g.score * g.credits); 
+      if (g.score >= 60) earnedCredits += g.credits;
+    }
+  });
+
+  const average = totalCreditsForGpa === 0 ? 0 : (weightedScore / totalCreditsForGpa);
+  return { 
+    totalCreditsForGpa, 
+    average: average.toFixed(2), 
+    earnedCredits 
+  };
 });
 
 const moduleProgress = computed(() => {
   const progress: Record<string, { total: number, req: number, elec: number }> = {};
   modules.value.forEach(m => { progress[m.id] = { total: 0, req: 0, elec: 0 }; });
+  
   grades.value.forEach(g => {
-    if (g.moduleId && progress[g.moduleId]) {
+    const isPassed = g.score === -1 || g.score >= 60;
+    
+    if (g.moduleId && progress[g.moduleId] && isPassed) {
       progress[g.moduleId].total += g.credits;
       if (g.category === '必修') progress[g.moduleId].req += g.credits;
       else if (g.category === '選修' || g.category === '必選修') progress[g.moduleId].elec += g.credits; 
@@ -81,20 +107,37 @@ const openGradeModal = () => {
   const savedCourses = localStorage.getItem('uni_life_courses_v1');
   if (savedCourses) allScheduleCourses.value = JSON.parse(savedCourses);
 
-  gradeForm.name = ''; gradeForm.credits = 0; gradeForm.score = 0;
+  gradeForm.name = ''; 
+  gradeForm.credits = 3; 
+  gradeForm.score = 80;
+  isSelfStudy.value = false; 
+
   if (modules.value.length > 0) gradeForm.moduleId = modules.value[0].id;
   else gradeForm.moduleId = '';
+  
   showGradeModal.value = true;
 };
 
 const saveGrade = async () => {
-  if (!gradeForm.name) return await customAlert('請輸入課程名稱喔！', '💡 提示');
+  let finalName = gradeForm.name;
+  
+  if (isSelfStudy.value) {
+    finalName = '自主學習'; 
+  } else {
+    if (!finalName) return await customAlert('請輸入課程名稱喔！', '💡 提示');
+  }
+
   if (gradeForm.credits <= 0) return await customAlert('學分必須大於 0 喔！', '💡 提示');
   if (!gradeForm.moduleId) return await customAlert('請選擇歸屬模組！\n(若無模組請先至「學分模組」新增)', '💡 提示');
 
   grades.value.push({
-    id: Date.now().toString(), semester: currentSemester.value, name: gradeForm.name,
-    credits: gradeForm.credits, category: gradeForm.category, score: gradeForm.score, moduleId: gradeForm.moduleId
+    id: Date.now().toString(), 
+    semester: currentSemester.value, 
+    name: finalName,
+    credits: gradeForm.credits, 
+    category: isSelfStudy.value ? '選修' : gradeForm.category, 
+    score: isSelfStudy.value ? -1 : gradeForm.score, 
+    moduleId: gradeForm.moduleId
   });
   showGradeModal.value = false;
 };
@@ -130,7 +173,7 @@ const deleteModule = async (id: string) => {
 
 <template>
   <div class="grade-container">
-
+    
     <div class="tabs">
       <button :class="{ active: currentTab === 'records' }" @click="currentTab = 'records'">📝 成績紀錄</button>
       <button :class="{ active: currentTab === 'modules' }" @click="currentTab = 'modules'">📊 學分模組</button>
@@ -138,7 +181,7 @@ const deleteModule = async (id: string) => {
 
     <div v-if="currentTab === 'records'">
       <div class="summary-card">
-        <div class="stat-box"><div class="stat-label">本學期學分</div><div class="stat-value">{{ currentStats.totalCredits }}</div></div>
+        <div class="stat-box"><div class="stat-label">本學期實得學分</div><div class="stat-value">{{ currentStats.earnedCredits }}</div></div>
         <div class="stat-divider"></div>
         <div class="stat-box"><div class="stat-label">本學期平均成績</div><div class="stat-value highlight">{{ currentStats.average }}</div></div>
       </div>
@@ -158,7 +201,14 @@ const deleteModule = async (id: string) => {
                 <span v-else class="badge module" style="background:#fee2e2; color:#ef4444;">⚠ 未分類</span>
               </div>
             </div>
-            <div class="g-score" :class="{ 'failed': item.score < 60 }">{{ item.score }}</div>
+            
+            <div class="g-score" v-if="item.score === -1" style="color: #10b981; font-size: 0.9rem;">
+              <span style="background:#d1fae5; padding: 4px 8px; border-radius: 6px;">P (通過)</span>
+            </div>
+            <div class="g-score" v-else :class="{ 'failed': item.score < 60 }">
+              {{ item.score }}
+            </div>
+
             <button class="del-btn" @click="deleteGrade(item.id)">×</button>
           </div>
         </div>
@@ -195,22 +245,51 @@ const deleteModule = async (id: string) => {
 
     <div v-if="showGradeModal" class="modal-overlay">
       <div class="modal-card">
-        <h3>💯 新增成績</h3>
-        <div class="form-group">
-          <label>課程名稱</label>
-          <input list="schedule-course-list" v-model="gradeForm.name" placeholder="點此選擇課表科目，或手動輸入" autocomplete="off">
-          <datalist id="schedule-course-list"><option v-for="cName in scheduleCourseNames" :key="cName" :value="cName"></option></datalist>
-        </div>
-        <div class="form-group"><label>成績</label><input type="number" v-model="gradeForm.score" placeholder="例如：85"></div>
+        <h3>💯 新增成績 <span style="font-size: 0.85rem; color: #888; font-weight: normal;">({{ currentSemester }})</span></h3>
+        
         <div class="form-row">
-          <div class="form-group"><label>學分</label><input type="number" v-model="gradeForm.credits"></div>
-          <div class="form-group"><label>類別 (必/選修)</label><select v-model="gradeForm.category"><option v-for="c in courseCategories" :key="c" :value="c">{{ c }}</option></select></div>
+            <div class="form-group" style="flex: 2; display: flex; flex-direction: column;">
+                <label>課程名稱</label>
+                
+                <input v-if="isSelfStudy" type="text" value="自主學習" disabled style="background: #f1f5f9; color: #94a3b8; cursor: not-allowed; margin-bottom: 6px;">
+                <input v-else list="schedule-course-list" v-model="gradeForm.name" placeholder="例: 計算機概論" autocomplete="off" style="margin-bottom: 6px;">
+                <datalist id="schedule-course-list"><option v-for="cName in scheduleCourseNames" :key="cName" :value="cName"></option></datalist>
+                
+                <label style="display:flex; align-items:center; cursor:pointer; margin-top: 2px; color: #3b82f6; font-size: 0.85rem; font-weight: bold;">
+                    <input type="checkbox" v-model="isSelfStudy" style="width:auto; margin: 0 6px 0 2px; cursor:pointer; transform: scale(1.1);">
+                    自主學習 <span style="color:#94a3b8; font-weight: normal; margin-left: 4px; font-size: 0.75rem;">(不計GPA)</span>
+                </label>
+            </div>
+            
+            <div class="form-group" style="flex: 1;">
+                <label>成績</label>
+                <input v-if="!isSelfStudy" type="number" v-model="gradeForm.score" placeholder="如：85">
+                <div v-else style="padding: 10px; background: #d1fae5; color: #10b981; border-radius: 8px; text-align: center; font-weight: bold; border: 1px solid #a7f3d0; box-sizing: border-box; font-size: 1rem; display: flex; align-items: center; justify-content: center; height: 42px;">
+                    P
+                </div>
+            </div>
         </div>
+
+        <div class="form-row" style="margin-top: 5px;">
+          <div class="form-group"><label>學分</label><input type="number" v-model="gradeForm.credits"></div>
+          <div class="form-group" v-if="!isSelfStudy">
+             <label>類別</label>
+             <select v-model="gradeForm.category"><option v-for="c in courseCategories" :key="c" :value="c">{{ c }}</option></select>
+          </div>
+        </div>
+
         <div class="form-group">
           <label>歸屬模組 <span style="color:#ef4444">*必填</span></label>
-          <select v-model="gradeForm.moduleId"><option value="" disabled>請選擇要計算在哪個模組</option><option v-for="m in modules" :key="m.id" :value="m.id">{{ m.name }}</option></select>
+          <select v-model="gradeForm.moduleId">
+            <option value="" disabled>請選擇要計算在哪個模組</option>
+            <option v-for="m in modules" :key="m.id" :value="m.id">{{ m.name }}</option>
+          </select>
         </div>
-        <div class="modal-actions"><button @click="showGradeModal = false">取消</button><button class="save-btn" @click="saveGrade">確定</button></div>
+        
+        <div class="modal-actions">
+            <button @click="showGradeModal = false">取消</button>
+            <button class="save-btn" @click="saveGrade">確定</button>
+        </div>
       </div>
     </div>
 
@@ -231,7 +310,6 @@ const deleteModule = async (id: string) => {
 </template>
 
 <style scoped>
-/* 刪除了 dept-card 的相關樣式，保留其餘的 */
 .grade-container { max-width: 800px; margin: 0 auto; padding: 10px; }
 .tabs { display: flex; margin-bottom: 15px; background: #eef2f5; padding: 5px; border-radius: 8px; }
 .tabs button { flex: 1; padding: 10px; border: none; background: transparent; color: #666; font-weight: bold; border-radius: 6px; cursor: pointer; transition: 0.2s; }

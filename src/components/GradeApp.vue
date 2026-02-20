@@ -1,11 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue';
-import { currentSemester, customAlert, customConfirm } from '../store'; // ✨ 引入自訂彈窗
+import { currentSemester, customAlert, customConfirm } from '../store';
 import type { CourseGrade, ModuleCategory, CourseCategory } from '../types/Grade';
-
-const department = ref(''); 
-const tempDepartment = ref('');
-const isDeptLocked = ref(true);
 
 const grades = ref<CourseGrade[]>([]);
 const modules = ref<ModuleCategory[]>([]); 
@@ -26,17 +22,14 @@ const moduleForm = reactive({
 
 const STORAGE_KEY_GRADES = 'uni_life_grades_v1';
 const STORAGE_KEY_MODULES = 'uni_life_modules_v2'; 
-const STORAGE_KEY_DEPT = 'uni_life_dept_v1';
 const allScheduleCourses = ref<any[]>([]);
 
 onMounted(() => {
   const savedGrades = localStorage.getItem(STORAGE_KEY_GRADES);
   const savedModules = localStorage.getItem(STORAGE_KEY_MODULES);
-  const savedDept = localStorage.getItem(STORAGE_KEY_DEPT);
   
   if (savedGrades) grades.value = JSON.parse(savedGrades);
   if (savedModules) modules.value = JSON.parse(savedModules);
-  if (savedDept) department.value = savedDept;
 
   const savedCourses = localStorage.getItem('uni_life_courses_v1');
   if (savedCourses) allScheduleCourses.value = JSON.parse(savedCourses);
@@ -44,7 +37,6 @@ onMounted(() => {
 
 watch(grades, (val) => localStorage.setItem(STORAGE_KEY_GRADES, JSON.stringify(val)), { deep: true });
 watch(modules, (val) => localStorage.setItem(STORAGE_KEY_MODULES, JSON.stringify(val)), { deep: true });
-watch(department, (val) => localStorage.setItem(STORAGE_KEY_DEPT, val));
 
 const scheduleCourseNames = computed(() => {
   const names = allScheduleCourses.value.filter(c => c.semester === currentSemester.value).map(c => c.name);
@@ -85,27 +77,16 @@ const calcPercent = (earned: number, target: number) => {
   return Math.min((earned / target) * 100, 100) + '%';
 };
 
-// ✨ 改用自訂彈窗
-const editDept = async () => {
-  if (await customConfirm('確定要解鎖並編輯學校科系嗎？', '🔓 解鎖確認')) {
-    tempDepartment.value = department.value;
-    isDeptLocked.value = false;
-  }
-};
-const saveDept = () => { department.value = tempDepartment.value.trim(); isDeptLocked.value = true; };
-const cancelDeptEdit = () => { isDeptLocked.value = true; };
-
 const openGradeModal = () => {
   const savedCourses = localStorage.getItem('uni_life_courses_v1');
   if (savedCourses) allScheduleCourses.value = JSON.parse(savedCourses);
 
-  gradeForm.name = ''; gradeForm.credits = 3; gradeForm.score = 80;
+  gradeForm.name = ''; gradeForm.credits = 0; gradeForm.score = 0;
   if (modules.value.length > 0) gradeForm.moduleId = modules.value[0].id;
   else gradeForm.moduleId = '';
   showGradeModal.value = true;
 };
 
-// ✨ 改用自訂彈窗
 const saveGrade = async () => {
   if (!gradeForm.name) return await customAlert('請輸入課程名稱喔！', '💡 提示');
   if (gradeForm.credits <= 0) return await customAlert('學分必須大於 0 喔！', '💡 提示');
@@ -118,7 +99,6 @@ const saveGrade = async () => {
   showGradeModal.value = false;
 };
 
-// ✨ 改用自訂彈窗
 const deleteGrade = async (id: string) => {
   if (await customConfirm('確定刪除此筆成績嗎？', '🗑️ 刪除確認')) {
     grades.value = grades.value.filter(g => g.id !== id);
@@ -131,7 +111,6 @@ const openModuleModal = () => {
   showModuleModal.value = true;
 };
 
-// ✨ 改用自訂彈窗
 const saveModule = async () => {
   if (!moduleForm.name) return await customAlert('請輸入模組名稱喔！', '💡 提示');
   modules.value.push({
@@ -141,7 +120,6 @@ const saveModule = async () => {
   showModuleModal.value = false;
 };
 
-// ✨ 改用自訂彈窗
 const deleteModule = async (id: string) => {
   if (await customConfirm('確定刪除此模組？\n(歸屬於此模組的成績將會失去分類喔！)', '🗑️ 刪除確認')) {
     modules.value = modules.value.filter(m => m.id !== id);
@@ -152,14 +130,6 @@ const deleteModule = async (id: string) => {
 
 <template>
   <div class="grade-container">
-    <div class="dept-card">
-      <div class="dept-header"><span>🎓 學校科系</span><button v-if="isDeptLocked" class="icon-btn-sm" @click="editDept">🔓 編輯</button></div>
-      <div v-if="isDeptLocked" class="dept-display" :class="{ 'is-empty': !department }">{{ department || '尚未設定，請點擊解鎖編輯' }}</div>
-      <div v-else class="dept-edit-area">
-        <input type="text" v-model="tempDepartment" placeholder="例如：台灣大學 資訊工程學系" class="dept-input">
-        <div class="dept-actions"><button class="cancel-btn" @click="cancelDeptEdit">取消</button><button class="save-btn-sm" @click="saveDept">💾 儲存</button></div>
-      </div>
-    </div>
 
     <div class="tabs">
       <button :class="{ active: currentTab === 'records' }" @click="currentTab = 'records'">📝 成績紀錄</button>
@@ -226,12 +196,12 @@ const deleteModule = async (id: string) => {
     <div v-if="showGradeModal" class="modal-overlay">
       <div class="modal-card">
         <h3>💯 新增成績</h3>
-        <div class="form-group"><label>成績</label><input type="number" v-model="gradeForm.score" placeholder="例如：85"></div>
         <div class="form-group">
           <label>課程名稱</label>
           <input list="schedule-course-list" v-model="gradeForm.name" placeholder="點此選擇課表科目，或手動輸入" autocomplete="off">
           <datalist id="schedule-course-list"><option v-for="cName in scheduleCourseNames" :key="cName" :value="cName"></option></datalist>
         </div>
+        <div class="form-group"><label>成績</label><input type="number" v-model="gradeForm.score" placeholder="例如：85"></div>
         <div class="form-row">
           <div class="form-group"><label>學分</label><input type="number" v-model="gradeForm.credits"></div>
           <div class="form-group"><label>類別 (必/選修)</label><select v-model="gradeForm.category"><option v-for="c in courseCategories" :key="c" :value="c">{{ c }}</option></select></div>
@@ -261,20 +231,8 @@ const deleteModule = async (id: string) => {
 </template>
 
 <style scoped>
-/* 樣式與上一版相同，保持原樣即可 */
+/* 刪除了 dept-card 的相關樣式，保留其餘的 */
 .grade-container { max-width: 800px; margin: 0 auto; padding: 10px; }
-.dept-card { background: white; border-radius: 12px; padding: 15px 20px; margin-bottom: 15px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
-.dept-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.95rem; color: #666; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; }
-.icon-btn-sm { background: #f8fafc; border: 1px solid #e2e8f0; color: #475569; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: bold; transition: 0.2s; }
-.icon-btn-sm:hover { background: #e2e8f0; }
-.dept-display { font-size: 1.15rem; color: #333; font-weight: bold; padding: 5px 0; }
-.dept-display.is-empty { color: #94a3b8; font-size: 1rem; font-weight: normal; font-style: italic; }
-.dept-edit-area { display: flex; flex-direction: column; gap: 10px; }
-.dept-input { width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; font-size: 1rem; color: #333; background: #fff; outline: none; transition: 0.2s; box-sizing: border-box; }
-.dept-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.1); }
-.dept-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.cancel-btn { background: transparent; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; color: #64748b; font-size: 0.9rem; }
-.save-btn-sm { background: #3b82f6; color: white; border: none; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.9rem; }
 .tabs { display: flex; margin-bottom: 15px; background: #eef2f5; padding: 5px; border-radius: 8px; }
 .tabs button { flex: 1; padding: 10px; border: none; background: transparent; color: #666; font-weight: bold; border-radius: 6px; cursor: pointer; transition: 0.2s; }
 .tabs button.active { background: #4a90e2; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }

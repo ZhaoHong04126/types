@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { userName, customAlert, customConfirm, customPrompt } from '../store'; // ✨ 引入自訂對話框
+import { userName, userDepartment, customAlert, customConfirm, customPrompt } from '../store'; // ✨ 引入 userDepartment
 
 const tempName = ref(userName.value);
+const tempDepartment = ref(userDepartment.value); // ✨ 暫存的科系輸入值
 const fileInput = ref<HTMLInputElement | null>(null);
 const isSettingsLocked = ref(true);
 
 const toggleSettingsLock = async () => {
   if (isSettingsLocked.value) {
-    // ✨ 改用 customConfirm
-    const isConfirmed = await customConfirm('確定要解除鎖定嗎？\n（解鎖後可修改暱稱、匯入備份或清除資料）', '🔓 解鎖確認');
+    const isConfirmed = await customConfirm('確定要解除鎖定嗎？\n（解鎖後可修改暱稱、校系、匯入備份或清除資料）', '🔓 解鎖確認');
     if (isConfirmed) {
       tempName.value = userName.value; 
+      tempDepartment.value = userDepartment.value; // ✨ 同步最新資料
       isSettingsLocked.value = false;
     }
   } else {
@@ -19,14 +20,16 @@ const toggleSettingsLock = async () => {
   }
 };
 
-const saveName = async () => {
+const saveSettings = async () => {
   if (!tempName.value.trim()) return await customAlert('暱稱不能為空喔！', '⚠️ 提示');
   
   userName.value = tempName.value.trim();
-  await customAlert('暱稱已成功更新！', '✅ 儲存成功');
+  userDepartment.value = tempDepartment.value.trim(); // ✨ 儲存科系
+  await customAlert('個人設定已成功更新！', '✅ 儲存成功');
   isSettingsLocked.value = true; 
 };
 
+// ...下方的 exportData, importData, triggerFileInput, clearAllData 等保持不變...
 const exportData = () => {
   const allData: Record<string, string | null> = {};
   for (let i = 0; i < localStorage.length; i++) {
@@ -62,7 +65,6 @@ const importData = async (event: Event) => {
     try {
       const data = JSON.parse(e.target?.result as string);
       
-      // ✨ 改用 customConfirm
       const isConfirmed = await customConfirm('⚠️ 警告：匯入資料將會覆蓋您目前的【所有紀錄】。\n確定要繼續嗎？', '🚨 匯入確認');
       if (!isConfirmed) {
         if (fileInput.value) fileInput.value.value = ''; 
@@ -75,7 +77,6 @@ const importData = async (event: Event) => {
         }
       });
 
-      // ✨ 改用 customAlert
       await customAlert('資料已成功還原！\n系統將為您重新載入以套用新資料。', '🎉 還原成功');
       window.location.reload(); 
 
@@ -95,11 +96,9 @@ const triggerFileInput = () => {
 const clearAllData = async () => {
   if (isSettingsLocked.value) return; 
 
-  // ✨ 改用 customConfirm
   const confirm1 = await customConfirm('🚨 警告：這將會清除您在此 APP 的【所有紀錄】（包含課表、記帳、成績等）！\n強烈建議您先使用「匯出備份」功能。\n\n確定要繼續嗎？', '💀 危險操作');
   
   if (confirm1) {
-    // ✨ 改用 customPrompt 做最後確認防呆
     const confirm2 = await customPrompt('此動作無法復原！\n請輸入「確認刪除」以執行：', '', '輸入 確認刪除', '🔥 最後確認');
     
     if (confirm2 === '確認刪除') {
@@ -138,15 +137,30 @@ const clearAllData = async () => {
 
     <div class="settings-card" :class="{ 'locked-card': isSettingsLocked }">
       <div class="card-header">👤 個人設定</div>
+      
       <div class="form-group">
         <label>您的稱呼</label>
         <div v-if="isSettingsLocked" class="readonly-text">{{ userName }}</div>
         <div v-else class="input-row">
           <input type="text" v-model="tempName" placeholder="請輸入暱稱">
-          <button class="action-btn primary" @click="saveName">更新</button>
         </div>
         <p class="hint-text">這個稱呼會顯示在首頁跟您打招呼喔！</p>
       </div>
+
+      <div class="form-group" style="margin-top: 20px;">
+        <label>學校科系</label>
+        <div v-if="isSettingsLocked" class="readonly-text" :class="{ 'is-empty': !userDepartment }">
+          {{ userDepartment || '尚未設定' }}
+        </div>
+        <div v-else class="input-row">
+          <input type="text" v-model="tempDepartment" placeholder="例如：台灣大學 資訊工程學系">
+        </div>
+        <p class="hint-text">標示您目前就讀的學校及系所。</p>
+      </div>
+
+      <button v-if="!isSettingsLocked" class="action-btn primary" style="margin-top: 20px; width: 100%;" @click="saveSettings">
+        💾 儲存設定
+      </button>
     </div>
 
     <div class="settings-card">
@@ -173,6 +187,7 @@ const clearAllData = async () => {
 </template>
 
 <style scoped>
+/* 保持原本設定頁面的 CSS 即可，以下新增一點點 .is-empty 的樣式 */
 .settings-container { max-width: 600px; margin: 0 auto; padding: 10px; }
 .toolbar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
 .lock-btn { background: white; border: 1px solid #ddd; color: #666; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
@@ -188,6 +203,7 @@ const clearAllData = async () => {
 .form-group { margin-bottom: 10px; }
 .form-group label { display: block; font-size: 0.85rem; color: #64748b; margin-bottom: 8px; font-weight: bold; }
 .readonly-text { font-size: 1.2rem; font-weight: bold; color: #333; padding: 5px 0; }
+.readonly-text.is-empty { color: #94a3b8; font-style: italic; } /* ✨ 新增空資料的灰色樣式 */
 .input-row { display: flex; gap: 10px; }
 .input-row input { flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 1rem; outline: none; transition: 0.2s; }
 .input-row input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }

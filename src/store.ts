@@ -6,6 +6,8 @@ export const currentSemester = ref('112-1');
 export const semesterList = ref<string[]>(['112-1']);
 // 使用者暱稱
 export const userName = ref('同學');
+// 學校校系
+export const userDepartment = ref('');
 
 // 初始化時從 LocalStorage 讀取紀錄
 const savedSem = localStorage.getItem('uni_life_current_sem');
@@ -17,6 +19,9 @@ if (savedList) semesterList.value = JSON.parse(savedList);
 const savedName = localStorage.getItem('uni_life_user_name');
 if (savedName) userName.value = savedName;
 
+const savedDept = localStorage.getItem('uni_life_dept_v1');
+if (savedDept) userDepartment.value = savedDept;
+
 // 監聽變動並自動存檔
 watch(currentSemester, (val) => {
   localStorage.setItem('uni_life_current_sem', val);
@@ -27,9 +32,11 @@ watch(semesterList, (val) => {
 watch(userName, (val) => {
   localStorage.setItem('uni_life_user_name', val);
 });
-
+watch(userDepartment, (val) => {
+  localStorage.setItem('uni_life_dept_v1', val);
+});
 // ==========================================
-// ✨ 全域自訂對話框 (Global Dialog) 系統
+// 全域自訂對話框 (Global Dialog) 系統
 // ==========================================
 export const dialogState = ref({
   isOpen: false,

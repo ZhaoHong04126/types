@@ -7,6 +7,7 @@ import AccountingApp from './components/AccountingApp.vue';
 import LotteryApp from './components/LotteryApp.vue';
 import CalendarApp from './components/CalendarApp.vue';
 import GradeApp from './components/GradeApp.vue';
+import SettingsApp from './components/SettingsApp.vue';
 
 const currentPage = ref('home');
 
@@ -28,6 +29,7 @@ const openApp = (appId: string) => {
   else if (appId === 'lottery') currentPage.value = 'lottery';
   else if (appId === 'calendar') currentPage.value = 'calendar';
   else if (appId === 'grades') currentPage.value = 'grades';
+  else if (appId === 'settings') currentPage.value = 'settings'; // 👈 加入這行
   else alert(`「${appId}」功能尚未實作！`);
 };
 
@@ -148,16 +150,10 @@ const deleteCurrentSemester = () => {
 
     <main class="main-content">
       <div v-if="currentPage === 'home'">
-        
         <div class="semester-widget">
-          
           <div class="semester-header">
             <div class="s-title">📅 目前學期</div>
-            <button 
-              class="lock-btn-sm" 
-              :class="{ 'is-locked': isSemesterLocked }" 
-              @click="toggleSemesterLock"
-            >
+            <button class="lock-btn-sm" :class="{ 'is-locked': isSemesterLocked }" @click="toggleSemesterLock">
               {{ isSemesterLocked ? '🔒 唯讀' : '🔓 編輯' }}
             </button>
           </div>
@@ -166,7 +162,6 @@ const deleteCurrentSemester = () => {
             <select v-model="currentSemester" class="semester-select">
               <option v-for="sem in semesterList" :key="sem" :value="sem">{{ sem }}</option>
             </select>
-
             <div class="semester-actions" v-if="!isSemesterLocked">
               <button class="icon-btn-sm edit-btn" @click="editCurrentSemester" title="重新命名">✏️ 修改</button>
               <button class="icon-btn-sm del-btn" @click="deleteCurrentSemester" title="刪除學期">🗑️ 刪除</button>
@@ -176,7 +171,6 @@ const deleteCurrentSemester = () => {
               💡 點選上方按鈕解鎖，即可新增或管理學期。
             </div>
           </div>
-          
         </div>
 
         <div class="app-grid">
@@ -192,6 +186,7 @@ const deleteCurrentSemester = () => {
       <div v-else-if="currentPage === 'lottery'"><LotteryApp /></div>
       <div v-else-if="currentPage === 'calendar'"><CalendarApp /></div>
       <div v-else-if="currentPage === 'grades'"><GradeApp /></div>
+      <div v-else-if="currentPage === 'settings'"><SettingsApp /></div>
     </main>
   </div>
 </template>

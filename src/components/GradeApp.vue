@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue';
-import { currentSemester, customAlert, customConfirm, customPrompt } from '../store'; // ✨ 引入 customPrompt
+// ✨ 正確引入 userDepartment
+import { currentSemester, userDepartment, customAlert, customConfirm, customPrompt } from '../store'; 
 import type { CourseGrade, ModuleCategory, CourseCategory } from '../types/Grade';
 
 const grades = ref<CourseGrade[]>([]);
@@ -12,7 +13,10 @@ const showModuleModal = ref(false);
 
 const isSelfStudy = ref(false);
 
-// ✨ 畢業總學分目標
+// 成績頁面鎖定狀態 (預設鎖定)
+const isLocked = ref(true);
+
+// 畢業總學分目標
 const graduationTarget = ref(128); 
 
 const courseCategories: CourseCategory[] = ['必修', '選修', '必選修'];
@@ -31,13 +35,13 @@ const moduleForm = reactive({
 
 const STORAGE_KEY_GRADES = 'uni_life_grades_v1';
 const STORAGE_KEY_MODULES = 'uni_life_modules_v2'; 
-const STORAGE_KEY_GRAD_TARGET = 'uni_life_grad_target_v1'; // ✨ 儲存畢業門檻的 key
+const STORAGE_KEY_GRAD_TARGET = 'uni_life_grad_target_v1'; 
 const allScheduleCourses = ref<any[]>([]);
 
 onMounted(() => {
   const savedGrades = localStorage.getItem(STORAGE_KEY_GRADES);
   const savedModules = localStorage.getItem(STORAGE_KEY_MODULES);
-  const savedGradTarget = localStorage.getItem(STORAGE_KEY_GRAD_TARGET); // ✨ 讀取畢業門檻
+  const savedGradTarget = localStorage.getItem(STORAGE_KEY_GRAD_TARGET); 
   
   if (savedGrades) grades.value = JSON.parse(savedGrades);
   if (savedModules) modules.value = JSON.parse(savedModules);
@@ -49,7 +53,7 @@ onMounted(() => {
 
 watch(grades, (val) => localStorage.setItem(STORAGE_KEY_GRADES, JSON.stringify(val)), { deep: true });
 watch(modules, (val) => localStorage.setItem(STORAGE_KEY_MODULES, JSON.stringify(val)), { deep: true });
-watch(graduationTarget, (val) => localStorage.setItem(STORAGE_KEY_GRAD_TARGET, val.toString())); // ✨ 自動儲存畢業門檻
+watch(graduationTarget, (val) => localStorage.setItem(STORAGE_KEY_GRAD_TARGET, val.toString()));
 
 const scheduleCourseNames = computed(() => {
   const names = allScheduleCourses.value.filter(c => c.semester === currentSemester.value).map(c => c.name);
@@ -88,7 +92,6 @@ const currentStats = computed(() => {
   };
 });
 
-// ✨ 計算歷年來「所有及格」的總學分
 const totalEarnedCredits = computed(() => {
   return grades.value.reduce((total, g) => {
     if (g.score === -1 || g.score >= 60) {
@@ -119,8 +122,18 @@ const calcPercent = (earned: number, target: number) => {
   return Math.min((earned / target) * 100, 100) + '%';
 };
 
-// ✨ 設定畢業門檻
+const toggleLock = async () => {
+  if (isLocked.value) {
+    if (await customConfirm('確定要進入編輯模式嗎？\n（解鎖後可新增/刪除成績與模組，及修改畢業門檻）', '🔓 解鎖確認')) {
+      isLocked.value = false;
+    }
+  } else {
+    isLocked.value = true;
+  }
+};
+
 const editGradTarget = async () => {
+  if (isLocked.value) return; 
   const res = await customPrompt('請輸入您的畢業總學分門檻：', graduationTarget.value.toString(), '例如：128', '🎓 設定標準');
   if (res !== null) {
     const val = parseInt(res);
@@ -133,6 +146,7 @@ const editGradTarget = async () => {
 };
 
 const openGradeModal = () => {
+  if (isLocked.value) return; 
   const savedCourses = localStorage.getItem('uni_life_courses_v1');
   if (savedCourses) allScheduleCourses.value = JSON.parse(savedCourses);
 
@@ -172,12 +186,14 @@ const saveGrade = async () => {
 };
 
 const deleteGrade = async (id: string) => {
+  if (isLocked.value) return; 
   if (await customConfirm('確定刪除此筆成績嗎？', '🗑️ 刪除確認')) {
     grades.value = grades.value.filter(g => g.id !== id);
   }
 };
 
 const openModuleModal = () => {
+  if (isLocked.value) return; 
   moduleForm.name = ''; moduleForm.type = 'simple'; moduleForm.targetCredits = 10;
   moduleForm.targetReq = 0; moduleForm.targetElec = 0;
   showModuleModal.value = true;
@@ -193,6 +209,7 @@ const saveModule = async () => {
 };
 
 const deleteModule = async (id: string) => {
+  if (isLocked.value) return; 
   if (await customConfirm('確定刪除此模組？\n(歸屬於此模組的成績將會失去分類喔！)', '🗑️ 刪除確認')) {
     modules.value = modules.value.filter(m => m.id !== id);
     grades.value.forEach(g => { if (g.moduleId === id) g.moduleId = ''; });
@@ -202,23 +219,33 @@ const deleteModule = async (id: string) => {
 
 <template>
   <div class="grade-container">
-    
+    <div class="toolbar">
+      <button class="lock-btn" :class="{ 'is-locked': isLocked }" @click="toggleLock">
+        {{ isLocked ? '🔒 唯讀模式' : '🔓 編輯模式' }}
+      </button>
+    </div>
     <div class="tabs">
       <button :class="{ active: currentTab === 'records' }" @click="currentTab = 'records'">📝 成績紀錄</button>
       <button :class="{ active: currentTab === 'modules' }" @click="currentTab = 'modules'">📊 學分模組</button>
     </div>
-
+    <div class="hint-bar locked-hint" v-if="isLocked">
+      🔒 成績與模組已鎖定，請點擊上方按鈕解鎖以編輯
+    </div>
+    <div class="hint-bar" v-else>
+      💡 編輯模式已開啟！您可以新增/刪除成績、模組與設定標準。
+    </div>
     <div v-if="currentTab === 'records'">
       <div class="summary-card">
         <div class="stat-box"><div class="stat-label">本學期實得學分</div><div class="stat-value">{{ currentStats.earnedCredits }}</div></div>
         <div class="stat-divider"></div>
         <div class="stat-box"><div class="stat-label">本學期平均成績</div><div class="stat-value highlight">{{ currentStats.average }}</div></div>
       </div>
-
       <div class="list-card">
-        <div class="list-header"><h3>本學期修課明細 <span style="font-size:0.85rem;color:#888;">({{ currentSemester }})</span></h3><button class="add-btn-sm" @click="openGradeModal">＋ 新增成績</button></div>
+        <div class="list-header">
+          <h3>本學期修課明細 <span style="font-size:0.85rem;color:#888;">({{ currentSemester }})</span></h3>
+          <button class="add-btn-sm" :disabled="isLocked" @click="openGradeModal">＋ 新增成績</button>
+        </div>
         <div v-if="currentSemesterGrades.length === 0" class="empty-state">這學期 ({{ currentSemester }}) 還沒有成績紀錄喔！</div>
-        
         <div class="grade-list">
           <div v-for="item in currentSemesterGrades" :key="item.id" class="g-item">
             <div class="g-info">
@@ -230,51 +257,43 @@ const deleteModule = async (id: string) => {
                 <span v-else class="badge module" style="background:#fee2e2; color:#ef4444;">⚠ 未分類</span>
               </div>
             </div>
-            
             <div class="g-score" v-if="item.score === -1" style="color: #10b981; font-size: 0.9rem;">
               <span style="background:#d1fae5; padding: 4px 8px; border-radius: 6px;">P (通過)</span>
             </div>
             <div class="g-score" v-else :class="{ 'failed': item.score < 60 }">
               {{ item.score }}
             </div>
-
-            <button class="del-btn" @click="deleteGrade(item.id)">×</button>
+            <button v-if="!isLocked" class="del-btn" @click="deleteGrade(item.id)">×</button>
           </div>
         </div>
       </div>
     </div>
 
     <div v-else-if="currentTab === 'modules'">
-      
       <div class="summary-card" style="flex-direction: column; align-items: stretch; padding: 20px; margin-bottom: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
           <div style="font-weight: bold; font-size: 1.1rem;">🎓 畢業總學分進度</div>
-          <button class="icon-btn-sm" style="background: rgba(255,255,255,0.2); color: white; border: none;" @click="editGradTarget">✏️ 設定標準</button>
+          <button v-if="!isLocked" class="icon-btn-sm" style="background: rgba(255,255,255,0.2); color: white; border: none;" @click="editGradTarget">✏️ 設定標準</button>
         </div>
-        
         <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem;">
           <span>實得學分：<strong style="font-size: 1.2rem;">{{ totalEarnedCredits }}</strong></span>
           <span>門檻：{{ graduationTarget }}</span>
         </div>
-        
         <div class="progress-bar-bg" style="background: rgba(255,255,255,0.2); height: 10px; border-radius: 5px; overflow: hidden;">
           <div class="progress-bar-fill" style="background: #fef08a; transition: width 0.4s ease-out;" :style="{ width: calcPercent(totalEarnedCredits, graduationTarget) }"></div>
         </div>
       </div>
-
       <div class="list-card">
         <div class="list-header">
           <div>
              <h3 style="margin-bottom: 4px; border: none; padding: 0;">📂 畢業學分模組</h3>
-             <div style="font-size: 0.85rem; color: #3b82f6; font-weight: bold;" v-if="schoolName || departmentName">
-                🏫 {{ schoolName }} {{ departmentName }}
+             <div style="font-size: 0.85rem; color: #3b82f6; font-weight: bold;" v-if="userDepartment">
+                🏫 {{ userDepartment }}
              </div>
           </div>
-          <button class="add-btn-sm" @click="openModuleModal">＋ 新增模組</button>
+          <button class="add-btn-sm" :disabled="isLocked" @click="openModuleModal">＋ 新增模組</button>
         </div>
-
         <div v-if="modules.length === 0" class="empty-state">目前為空，請先點擊上方新增模組 (例如：共同必修、系定選修)。</div>
-
         <div class="module-list">
           <div v-for="mod in modules" :key="mod.id" class="m-item">
             <template v-if="mod.type === 'simple'">
@@ -292,7 +311,7 @@ const deleteModule = async (id: string) => {
                 <div class="progress-bar-bg" style="height: 6px;"><div class="progress-bar-fill" style="background: #f39c12;" :style="{ width: calcPercent(moduleProgress[mod.id]?.elec || 0, mod.targetElec) }"></div></div>
               </div>
             </template>
-            <button class="del-btn-sm mt-2" @click="deleteModule(mod.id)">刪除模組</button>
+            <button v-if="!isLocked" class="del-btn-sm mt-2" @click="deleteModule(mod.id)">刪除模組</button>
           </div>
         </div>
       </div>
@@ -301,30 +320,25 @@ const deleteModule = async (id: string) => {
     <div v-if="showGradeModal" class="modal-overlay">
       <div class="modal-card">
         <h3>💯 新增成績 <span style="font-size: 0.85rem; color: #888; font-weight: normal;">({{ currentSemester }})</span></h3>
-        
         <div class="form-row">
             <div class="form-group" style="flex: 2; display: flex; flex-direction: column;">
                 <label>課程名稱</label>
-                
                 <input v-if="isSelfStudy" type="text" value="自主學習" disabled style="background: #f1f5f9; color: #94a3b8; cursor: not-allowed; margin-bottom: 6px;">
                 <input v-else list="schedule-course-list" v-model="gradeForm.name" placeholder="例: 計算機概論" autocomplete="off" style="margin-bottom: 6px;">
                 <datalist id="schedule-course-list"><option v-for="cName in scheduleCourseNames" :key="cName" :value="cName"></option></datalist>
-                
                 <label style="display:flex; align-items:center; cursor:pointer; margin-top: 2px; color: #3b82f6; font-size: 0.85rem; font-weight: bold;">
                     <input type="checkbox" v-model="isSelfStudy" style="width:auto; margin: 0 6px 0 2px; cursor:pointer; transform: scale(1.1);">
                     自主學習 <span style="color:#94a3b8; font-weight: normal; margin-left: 4px; font-size: 0.75rem;">(不計GPA)</span>
                 </label>
             </div>
-            
             <div class="form-group" style="flex: 1;">
                 <label>成績</label>
                 <input v-if="!isSelfStudy" type="number" v-model="gradeForm.score" placeholder="如：85">
                 <div v-else style="padding: 10px; background: #d1fae5; color: #10b981; border-radius: 8px; text-align: center; font-weight: bold; border: 1px solid #a7f3d0; box-sizing: border-box; font-size: 1rem; display: flex; align-items: center; justify-content: center; height: 42px;">
-                    P
+                  P
                 </div>
             </div>
         </div>
-
         <div class="form-row" style="margin-top: 5px;">
           <div class="form-group"><label>學分</label><input type="number" v-model="gradeForm.credits"></div>
           <div class="form-group" v-if="!isSelfStudy">
@@ -332,7 +346,6 @@ const deleteModule = async (id: string) => {
              <select v-model="gradeForm.category"><option v-for="c in courseCategories" :key="c" :value="c">{{ c }}</option></select>
           </div>
         </div>
-
         <div class="form-group">
           <label>歸屬模組 <span style="color:#ef4444">*必填</span></label>
           <select v-model="gradeForm.moduleId">
@@ -340,14 +353,12 @@ const deleteModule = async (id: string) => {
             <option v-for="m in modules" :key="m.id" :value="m.id">{{ m.name }}</option>
           </select>
         </div>
-        
         <div class="modal-actions">
             <button @click="showGradeModal = false">取消</button>
             <button class="save-btn" @click="saveGrade">確定</button>
         </div>
       </div>
     </div>
-
     <div v-if="showModuleModal" class="modal-overlay">
       <div class="modal-card">
         <h3>📊 新增學分模組</h3>
@@ -365,8 +376,14 @@ const deleteModule = async (id: string) => {
 </template>
 
 <style scoped>
-/* 樣式保持原樣不變 */
 .grade-container { max-width: 800px; margin: 0 auto; padding: 10px; }
+
+.toolbar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+.lock-btn { background: white; border: 1px solid #ddd; color: #666; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+.lock-btn.is-locked { background: #fff3e0; color: #f57c00; border-color: #f57c00; }
+.hint-bar { background: rgba(59, 130, 246, 0.1); color: #3b82f6; padding: 10px 12px; border-radius: 8px; margin-bottom: 20px; font-size: 0.9rem; text-align: center; font-weight: bold; }
+.hint-bar.locked-hint { background: #fff3e0; color: #f57c00; }
+
 .tabs { display: flex; margin-bottom: 15px; background: #eef2f5; padding: 5px; border-radius: 8px; }
 .tabs button { flex: 1; padding: 10px; border: none; background: transparent; color: #666; font-weight: bold; border-radius: 6px; cursor: pointer; transition: 0.2s; }
 .tabs button.active { background: #4a90e2; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -403,6 +420,7 @@ const deleteModule = async (id: string) => {
 .badge.credits { background: #f1f5f9; color: #475569; }
 .badge.module { background: #e2e8f0; color: #334155; }
 .add-btn-sm { background: #333; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.85rem; }
+.add-btn-sm:disabled { background: #ccc; cursor: not-allowed; }
 .del-btn { background: transparent; border: none; color: #cbd5e1; font-size: 1.2rem; cursor: pointer; }
 .del-btn:hover { color: #ef4444; }
 .del-btn-sm { background: transparent; border: 1px solid #ef4444; color: #ef4444; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; cursor: pointer; margin-top: 10px; }

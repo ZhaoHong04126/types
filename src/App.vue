@@ -7,6 +7,7 @@ import AccountingApp from './components/AccountingApp.vue';
 import LotteryApp from './components/LotteryApp.vue';
 import CalendarApp from './components/CalendarApp.vue';
 import GradeApp from './components/GradeApp.vue';
+import AnniversaryApp from './components/AnniversaryApp.vue';
 import SettingsApp from './components/SettingsApp.vue';
 
 const currentPage = ref('home');
@@ -20,6 +21,7 @@ const apps = [
   { id: 'calendar', name: '行事曆', icon: '🗓️', bg: 'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)' },
   { id: 'grades', name: '成績管理', icon: '💯', bg: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)' },
   { id: 'accounting', name: '記帳', icon: '💰', bg: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)' },
+  { id: 'anniversary', name: '紀念日', icon: '⏳', bg: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' },
   { id: 'settings', name: '設定', icon: '⚙️', bg: 'linear-gradient(135deg, #505285 0%, #585e92 12%, #65689f 25%, #7474b0 37%, #7e7ebb 50%, #8389c7 62%, #9795d4 75%, #a2a1dc 87%, #b5aee4 100%)' }
 ];
 
@@ -29,7 +31,8 @@ const openApp = (appId: string) => {
   else if (appId === 'lottery') currentPage.value = 'lottery';
   else if (appId === 'calendar') currentPage.value = 'calendar';
   else if (appId === 'grades') currentPage.value = 'grades';
-  else if (appId === 'settings') currentPage.value = 'settings'; // 👈 加入這行
+  else if (appId === 'anniversary') currentPage.value = 'anniversary';
+  else if (appId === 'settings') currentPage.value = 'settings';
   else alert(`「${appId}」功能尚未實作！`);
 };
 
@@ -186,6 +189,7 @@ const deleteCurrentSemester = () => {
       <div v-else-if="currentPage === 'lottery'"><LotteryApp /></div>
       <div v-else-if="currentPage === 'calendar'"><CalendarApp /></div>
       <div v-else-if="currentPage === 'grades'"><GradeApp /></div>
+      <div v-else-if="currentPage === 'anniversary'"><AnniversaryApp /></div>
       <div v-else-if="currentPage === 'settings'"><SettingsApp /></div>
     </main>
   </div>

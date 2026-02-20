@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue';
-import { currentSemester, customAlert, customConfirm } from '../store'; 
+import { currentSemester, customAlert, customConfirm, customPrompt } from '../store'; // ✨ 引入 customPrompt
 import type { CourseGrade, ModuleCategory, CourseCategory } from '../types/Grade';
 
 const grades = ref<CourseGrade[]>([]);
@@ -10,8 +10,10 @@ const currentTab = ref<'records' | 'modules'>('records');
 const showGradeModal = ref(false);
 const showModuleModal = ref(false);
 
-// 自主學習狀態
 const isSelfStudy = ref(false);
+
+// ✨ 畢業總學分目標
+const graduationTarget = ref(128); 
 
 const courseCategories: CourseCategory[] = ['必修', '選修', '必選修'];
 
@@ -29,14 +31,17 @@ const moduleForm = reactive({
 
 const STORAGE_KEY_GRADES = 'uni_life_grades_v1';
 const STORAGE_KEY_MODULES = 'uni_life_modules_v2'; 
+const STORAGE_KEY_GRAD_TARGET = 'uni_life_grad_target_v1'; // ✨ 儲存畢業門檻的 key
 const allScheduleCourses = ref<any[]>([]);
 
 onMounted(() => {
   const savedGrades = localStorage.getItem(STORAGE_KEY_GRADES);
   const savedModules = localStorage.getItem(STORAGE_KEY_MODULES);
+  const savedGradTarget = localStorage.getItem(STORAGE_KEY_GRAD_TARGET); // ✨ 讀取畢業門檻
   
   if (savedGrades) grades.value = JSON.parse(savedGrades);
   if (savedModules) modules.value = JSON.parse(savedModules);
+  if (savedGradTarget) graduationTarget.value = parseInt(savedGradTarget);
 
   const savedCourses = localStorage.getItem('uni_life_courses_v1');
   if (savedCourses) allScheduleCourses.value = JSON.parse(savedCourses);
@@ -44,6 +49,7 @@ onMounted(() => {
 
 watch(grades, (val) => localStorage.setItem(STORAGE_KEY_GRADES, JSON.stringify(val)), { deep: true });
 watch(modules, (val) => localStorage.setItem(STORAGE_KEY_MODULES, JSON.stringify(val)), { deep: true });
+watch(graduationTarget, (val) => localStorage.setItem(STORAGE_KEY_GRAD_TARGET, val.toString())); // ✨ 自動儲存畢業門檻
 
 const scheduleCourseNames = computed(() => {
   const names = allScheduleCourses.value.filter(c => c.semester === currentSemester.value).map(c => c.name);
@@ -82,6 +88,16 @@ const currentStats = computed(() => {
   };
 });
 
+// ✨ 計算歷年來「所有及格」的總學分
+const totalEarnedCredits = computed(() => {
+  return grades.value.reduce((total, g) => {
+    if (g.score === -1 || g.score >= 60) {
+      return total + g.credits;
+    }
+    return total;
+  }, 0);
+});
+
 const moduleProgress = computed(() => {
   const progress: Record<string, { total: number, req: number, elec: number }> = {};
   modules.value.forEach(m => { progress[m.id] = { total: 0, req: 0, elec: 0 }; });
@@ -101,6 +117,19 @@ const moduleProgress = computed(() => {
 const calcPercent = (earned: number, target: number) => {
   if (target <= 0) return earned > 0 ? '100%' : '0%';
   return Math.min((earned / target) * 100, 100) + '%';
+};
+
+// ✨ 設定畢業門檻
+const editGradTarget = async () => {
+  const res = await customPrompt('請輸入您的畢業總學分門檻：', graduationTarget.value.toString(), '例如：128', '🎓 設定標準');
+  if (res !== null) {
+    const val = parseInt(res);
+    if (!isNaN(val) && val > 0) {
+      graduationTarget.value = val;
+    } else {
+      await customAlert('請輸入大於 0 的有效數字喔！', '⚠️ 提示');
+    }
+  }
 };
 
 const openGradeModal = () => {
@@ -216,8 +245,34 @@ const deleteModule = async (id: string) => {
     </div>
 
     <div v-else-if="currentTab === 'modules'">
+      
+      <div class="summary-card" style="flex-direction: column; align-items: stretch; padding: 20px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div style="font-weight: bold; font-size: 1.1rem;">🎓 畢業總學分進度</div>
+          <button class="icon-btn-sm" style="background: rgba(255,255,255,0.2); color: white; border: none;" @click="editGradTarget">✏️ 設定標準</button>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem;">
+          <span>實得學分：<strong style="font-size: 1.2rem;">{{ totalEarnedCredits }}</strong></span>
+          <span>門檻：{{ graduationTarget }}</span>
+        </div>
+        
+        <div class="progress-bar-bg" style="background: rgba(255,255,255,0.2); height: 10px; border-radius: 5px; overflow: hidden;">
+          <div class="progress-bar-fill" style="background: #fef08a; transition: width 0.4s ease-out;" :style="{ width: calcPercent(totalEarnedCredits, graduationTarget) }"></div>
+        </div>
+      </div>
+
       <div class="list-card">
-        <div class="list-header"><h3>📂 畢業學分模組 <span style="font-size:0.8rem;color:#888;font-weight:normal">(歷年總計)</span></h3><button class="add-btn-sm" @click="openModuleModal">＋ 新增模組</button></div>
+        <div class="list-header">
+          <div>
+             <h3 style="margin-bottom: 4px; border: none; padding: 0;">📂 畢業學分模組</h3>
+             <div style="font-size: 0.85rem; color: #3b82f6; font-weight: bold;" v-if="schoolName || departmentName">
+                🏫 {{ schoolName }} {{ departmentName }}
+             </div>
+          </div>
+          <button class="add-btn-sm" @click="openModuleModal">＋ 新增模組</button>
+        </div>
+
         <div v-if="modules.length === 0" class="empty-state">目前為空，請先點擊上方新增模組 (例如：共同必修、系定選修)。</div>
 
         <div class="module-list">
@@ -310,6 +365,7 @@ const deleteModule = async (id: string) => {
 </template>
 
 <style scoped>
+/* 樣式保持原樣不變 */
 .grade-container { max-width: 800px; margin: 0 auto; padding: 10px; }
 .tabs { display: flex; margin-bottom: 15px; background: #eef2f5; padding: 5px; border-radius: 8px; }
 .tabs button { flex: 1; padding: 10px; border: none; background: transparent; color: #666; font-weight: bold; border-radius: 6px; cursor: pointer; transition: 0.2s; }
@@ -362,4 +418,6 @@ input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radiu
 .modal-actions { display: flex; gap: 10px; margin-top: 25px; }
 .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: bold; }
 .save-btn { background: #3b82f6; color: white; }
+.icon-btn-sm { padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: bold; transition: 0.2s; }
+.icon-btn-sm:hover { filter: brightness(0.9); }
 </style>

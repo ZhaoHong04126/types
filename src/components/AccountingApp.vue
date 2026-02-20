@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue';
+import { customAlert, customConfirm } from '../store'; // ✨ 引入自訂對話框
 import type { Transaction } from '../types/Accounting';
 import Chart from 'chart.js/auto';
 
@@ -12,7 +13,7 @@ const currentTab = ref<'records' | 'accounts' | 'stats'>('records');
 // 新增帳戶 Modal 狀態
 const showAddAccountModal = ref(false);
 
-// ✨ 帳戶頁面的鎖定狀態 (預設為鎖定)
+// 帳戶頁面的鎖定狀態 (預設為鎖定)
 const isAccountLocked = ref(true);
 
 // 圖表相關
@@ -145,14 +146,15 @@ const openModal = () => {
   showModal.value = true;
 };
 
-const addTransaction = () => {
-  if (!form.amount) return alert('請輸入金額');
+// ✨ 改用 customAlert
+const addTransaction = async () => {
+  if (!form.amount) return await customAlert('請輸入金額喔！', '💡 提示');
   if (form.type === 'transfer') {
-    if (form.method === form.to_method) return alert('轉出與轉入帳戶不能相同');
-    if (!form.to_method) return alert('請選擇轉入帳戶');
+    if (form.method === form.to_method) return await customAlert('轉出與轉入帳戶不能相同喔！', '💡 提示');
+    if (!form.to_method) return await customAlert('請選擇轉入帳戶！', '💡 提示');
     if (!form.title) form.title = '轉帳';
   } else {
-    if (!form.title) return alert('請輸入項目說明');
+    if (!form.title) return await customAlert('請輸入項目說明喔！', '💡 提示');
   }
 
   transactions.value.push({
@@ -168,18 +170,19 @@ const addTransaction = () => {
   showModal.value = false;
 };
 
-const deleteTransaction = (id: string) => {
-  if (confirm('確定刪除？')) {
+// ✨ 改用 customConfirm
+const deleteTransaction = async (id: string) => {
+  if (await customConfirm('確定要刪除這筆紀錄嗎？', '🗑️ 刪除確認')) {
     transactions.value = transactions.value.filter(t => t.id !== id);
   }
 };
 
 // --- 6. 操作邏輯 (帳戶管理) ---
 
-// ✨ 帳戶鎖定切換
-const toggleAccountLock = () => {
+// ✨ 改用 customConfirm
+const toggleAccountLock = async () => {
   if (isAccountLocked.value) {
-    if (confirm('確定要進入編輯模式嗎？（開啟後可新增/刪除帳戶）')) {
+    if (await customConfirm('確定要進入編輯模式嗎？\n（開啟後可新增或刪除帳戶）', '🔓 解鎖確認')) {
       isAccountLocked.value = false;
     }
   } else {
@@ -188,18 +191,19 @@ const toggleAccountLock = () => {
 };
 
 const openAddAccount = () => {
-  if (isAccountLocked.value) return; // 鎖定防呆
+  if (isAccountLocked.value) return; 
   accountForm.name = '';
   accountForm.initAmount = '';
   showAddAccountModal.value = true;
 };
 
-const confirmAddAccount = () => {
+// ✨ 改用 customAlert
+const confirmAddAccount = async () => {
   const name = accountForm.name.trim();
   const initAmount = Number(accountForm.initAmount) || 0;
 
-  if (!name) return alert('請輸入帳戶名稱');
-  if (paymentMethods.value.includes(name)) return alert('此帳戶名稱已存在！');
+  if (!name) return await customAlert('請輸入帳戶名稱喔！', '💡 提示');
+  if (paymentMethods.value.includes(name)) return await customAlert('此帳戶名稱已存在！', '⚠️ 提示');
 
   paymentMethods.value.push(name);
 
@@ -217,8 +221,9 @@ const confirmAddAccount = () => {
   showAddAccountModal.value = false;
 };
 
-const deletePaymentMethod = (name: string) => {
-  if (confirm(`確定刪除「${name}」？(這不會刪除歷史紀錄，但以後無法再選)`)) {
+// ✨ 改用 customConfirm
+const deletePaymentMethod = async (name: string) => {
+  if (await customConfirm(`確定刪除「${name}」？\n(這不會刪除歷史紀錄，但以後無法再選)`, '🗑️ 刪除確認')) {
     paymentMethods.value = paymentMethods.value.filter(m => m !== name);
   }
 };
@@ -360,6 +365,7 @@ const deletePaymentMethod = (name: string) => {
 </template>
 
 <style scoped>
+/* 樣式保持原樣不變 */
 .acc-container { max-width: 800px; margin: 0 auto; }
 .tabs { display: flex; margin-bottom: 15px; background: #eef2f5; padding: 5px; border-radius: 8px; }
 .tabs button { flex: 1; padding: 10px; border: none; background: transparent; color: #666; font-weight: bold; border-radius: 6px; cursor: pointer; transition: 0.2s; }
@@ -383,7 +389,6 @@ const deletePaymentMethod = (name: string) => {
 .badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; margin-right: 5px; font-weight: normal; }
 .badge.income { background: #e8f5e9; color: #2ecc71; } .badge.expense { background: #ffebee; color: #e74c3c; } .badge.transfer { background: #e3f2fd; color: #3498db; }
 
-/* ✨ 加入 Toolbar 與提示條的樣式 */
 .toolbar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
 .lock-btn { background: white; border: 1px solid #ddd; color: #666; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.2s; }
 .lock-btn.is-locked { background: #fff3e0; color: #f57c00; border-color: #f57c00; }
@@ -391,7 +396,7 @@ const deletePaymentMethod = (name: string) => {
 .hint-bar.locked-hint { background: #fff3e0; color: #f57c00; }
 
 .add-btn-large { width: 100%; background: #333; color: white; padding: 12px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-.add-btn-large:disabled { background: #ccc; cursor: not-allowed; } /* ✨ 鎖定時變灰 */
+.add-btn-large:disabled { background: #ccc; cursor: not-allowed; } 
 .del-btn { background: transparent; border: none; color: #ddd; font-size: 1.2rem; cursor: pointer; }
 .del-btn-sm { background: transparent; border: 1px solid #eee; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
 
